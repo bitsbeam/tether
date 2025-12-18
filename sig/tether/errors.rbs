@@ -1,0 +1,85 @@
+module Tether
+  class Error < StandardError
+  end
+
+  class ProtocolError < Error
+  end
+
+  class TimeoutError < Error
+  end
+
+  class NoRespondersError < Error
+  end
+
+  class MaxPayloadError < Error
+  end
+
+  class SlowConsumerError < Error
+  end
+
+  class InvalidSubjectError < Error
+  end
+
+  class ConnectionError < Error
+  end
+
+  class ConnectionClosedError < ConnectionError
+  end
+
+  class ConnectionDrainingError < ConnectionError
+  end
+
+  class ConnectionReconnectingError < ConnectionError
+  end
+
+  class NoServersError < ConnectionError
+  end
+
+  class ServerError < Error
+    MAPPING: Hash[String, Symbol]
+
+    def self.for: (String? description) -> ServerError
+    def fatal?: () -> bool
+  end
+
+  class AuthorizationError < ServerError
+  end
+
+  class AuthenticationExpiredError < ServerError
+  end
+
+  class AuthenticationTimeoutError < ServerError
+  end
+
+  class StaleConnectionError < ServerError
+  end
+
+  class MaxConnectionsError < ServerError
+  end
+
+  class MaxPayloadViolationError < ServerError
+  end
+
+  class MaxControlLineError < ServerError
+  end
+
+  class ServerInvalidSubjectError < ServerError
+  end
+
+  class TLSRequiredError < ServerError
+  end
+
+  class InvalidClientProtocolError < ServerError
+  end
+
+  class UnknownProtocolError < ServerError
+  end
+
+  class ServerSlowConsumerError < ServerError
+    def fatal?: () -> bool
+  end
+
+  class PermissionsViolationError < ServerError
+    def fatal?: () -> bool
+  end
+end
