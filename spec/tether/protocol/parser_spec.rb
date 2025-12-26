@@ -32,33 +32,33 @@ RSpec.describe Tether::Protocol::Parser do
 
   describe "messages" do
     it "parses MSG" do
-      expect(feed("MSG foo 1 3\r\nbar\r\n")).to eq([[:msg, "foo", 1, nil, nil, "bar"]])
+      expect(feed("MSG foo 1 3\r\nbar\r\n")).to eq([[:msg, "foo", "1", nil, nil, "bar"]])
     end
 
     it "parses MSG with a reply subject" do
       expect(feed("MSG foo 2 _INBOX.a.b 3\r\nbaz\r\n"))
-        .to eq([[:msg, "foo", 2, "_INBOX.a.b", nil, "baz"]])
+        .to eq([[:msg, "foo", "2", "_INBOX.a.b", nil, "baz"]])
     end
 
     it "parses an empty payload" do
-      expect(feed("MSG foo 1 0\r\n\r\n")).to eq([[:msg, "foo", 1, nil, nil, ""]])
+      expect(feed("MSG foo 1 0\r\n\r\n")).to eq([[:msg, "foo", "1", nil, nil, ""]])
     end
 
     it "parses HMSG and hands the header block over unparsed" do
       expect(feed("HMSG foo 3 28 31\r\nNATS/1.0\r\nNats-Msg-Id: 1\r\n\r\nbar\r\n"))
-        .to eq([[:msg, "foo", 3, nil, "NATS/1.0\r\nNats-Msg-Id: 1\r\n\r\n", "bar"]])
+        .to eq([[:msg, "foo", "3", nil, "NATS/1.0\r\nNats-Msg-Id: 1\r\n\r\n", "bar"]])
     end
 
     it "parses HMSG with a reply subject and no payload" do
       expect(feed("HMSG q 4 _INBOX.r 16 16\r\nNATS/1.0 503\r\n\r\n\r\n"))
-        .to eq([[:msg, "q", 4, "_INBOX.r", "NATS/1.0 503\r\n\r\n", ""]])
+        .to eq([[:msg, "q", "4", "_INBOX.r", "NATS/1.0 503\r\n\r\n", ""]])
     end
 
     it "keeps a payload that contains CRLF and high bytes intact" do
       payload = "\x00\x01\r\n\xFF".b
 
       expect(feed("MSG bin 5 5\r\n#{payload}\r\n".b))
-        .to eq([[:msg, "bin", 5, nil, nil, payload]])
+        .to eq([[:msg, "bin", "5", nil, nil, payload]])
     end
 
     it "yields binary payloads regardless of the encoding of the bytes fed in" do
@@ -67,9 +67,15 @@ RSpec.describe Tether::Protocol::Parser do
       expect(sink.events.first.last.encoding).to eq(Encoding::BINARY)
     end
 
+    it "treats the sid as the opaque token the server echoes back, not a number" do
+      expect(feed("MSG foo abcd 5\r\nhello\r\n"))
+        .to eq([[:msg, "foo", "abcd", nil, nil, "hello"]])
+      expect(parser).not_to be_broken
+    end
+
     it "parses back to back messages from a single chunk" do
       expect(feed("MSG a 1 1\r\nx\r\nMSG b 2 1\r\ny\r\n"))
-        .to eq([[:msg, "a", 1, nil, nil, "x"], [:msg, "b", 2, nil, nil, "y"]])
+        .to eq([[:msg, "a", "1", nil, nil, "x"], [:msg, "b", "2", nil, nil, "y"]])
     end
   end
 
@@ -155,6 +161,19 @@ RSpec.describe Tether::Protocol::Parser do
 
       expect(parser).to be_broken
       expect(sink.events.size).to eq(1)
+    end
+
+    it "refuses a payload size the server itself would refuse to parse" do
+      feed("MSG foo 1 9999999999\r\n")
+
+      expect(sink.events.first.first).to eq(:protocol_error)
+    end
+
+    it "refuses a frame larger than the max_payload the server advertised" do
+      bounded = described_class.new(sink, max_payload: 1024)
+      bounded << "MSG foo 1 2048\r\n"
+
+      expect(sink.events).to eq([[:protocol_error, "frame of 2048 bytes exceeds max_payload 1024 on foo"]])
     end
 
     it "refuses a control line past the sanity bound" do

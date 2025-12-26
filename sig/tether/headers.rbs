@@ -3,8 +3,18 @@ module Tether
     type entries = Hash[String, String | Array[String]]
 
     VERSION: String
+    CONTROL: Integer
+    NO_CONTENT: Integer
+    BAD_REQUEST: Integer
+    NOT_FOUND: Integer
+    REQUEST_TIMEOUT: Integer
+    CONFLICT: Integer
+    REQUIRED_API_LEVEL: Integer
+    TOO_MANY_RESULTS: Integer
+    PIN_ID_MISMATCH: Integer
+    TOO_MANY_REQUESTS: Integer
+    INTERNAL_ERROR: Integer
     NO_RESPONDERS: Integer
-    IDLE_HEARTBEAT: Integer
 
     attr_reader status: Integer?
     attr_reader description: String?
@@ -24,13 +34,17 @@ module Tether
     def keys: () -> Array[String]
     def empty?: () -> bool
     def no_responders?: () -> bool
+    def control?: () -> bool
     def idle_heartbeat?: () -> bool
+    def flow_control?: () -> bool
     def to_h: () -> Hash[String, Array[String]]
     def to_wire: () -> String
     def inspect: () -> String
 
     private
 
+    def validate_key: (untyped key) -> String
+    def validate_value: (untyped value) -> String
     def status_suffix: () -> String
   end
 end

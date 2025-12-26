@@ -17,8 +17,9 @@ module Tether
     #
     # The sink must respond to:
     #
-    # - `on_msg(subject, sid, reply_to, header_bytes, payload)` where
-    #   `header_bytes` is nil for `MSG` and the raw header block for `HMSG`
+    # - `on_msg(subject, sid, reply_to, header_bytes, payload)` where `sid` is
+    #   the opaque token this client chose at SUB time, echoed back verbatim,
+    #   and `header_bytes` is nil for `MSG` or the raw header block for `HMSG`
     # - `on_ping`, `on_pong`, `on_ok`
     # - `on_info(json)` with the still unparsed JSON text
     # - `on_error(description)` for an `-ERR` line
@@ -30,8 +31,8 @@ module Tether
       AWAITING_CONTROL_LINE = :control
       AWAITING_PAYLOAD = :payload
 
-      MSG_LINE = /\GMSG[ \t]+(\S+)[ \t]+(\d+)[ \t]+(?:(\S+)[ \t]+)?(\d+)[ \t]*\r\n/i
-      HMSG_LINE = /\GHMSG[ \t]+(\S+)[ \t]+(\d+)[ \t]+(?:(\S+)[ \t]+)?(\d+)[ \t]+(\d+)[ \t]*\r\n/i
+      MSG_LINE = /\GMSG[ \t]+(\S+)[ \t]+(\S+)[ \t]+(?:(\S+)[ \t]+)?(\d{1,9})[ \t]*\r\n/i
+      HMSG_LINE = /\GHMSG[ \t]+(\S+)[ \t]+(\S+)[ \t]+(?:(\S+)[ \t]+)?(\d{1,9})[ \t]+(\d{1,9})[ \t]*\r\n/i
 
       CR = 13
       LF = 10
@@ -43,11 +44,17 @@ module Tether
       # @return [Symbol] :control or :payload
       attr_reader :state
 
+      # @return [Integer, nil] largest frame accepted, from the server's INFO
+      attr_accessor :max_payload
+
       # @param sink [Object] receives the parsed frames
       # @param max_control_line [Integer] sanity bound on a single control line
-      def initialize(sink, max_control_line: DEFAULT_MAX_CONTROL_LINE)
+      # @param max_payload [Integer, nil] reject a frame larger than the server
+      #   advertised in INFO, rather than buffering toward it
+      def initialize(sink, max_control_line: DEFAULT_MAX_CONTROL_LINE, max_payload: nil)
         @sink = sink
         @max_control_line = max_control_line
+        @max_payload = max_payload
         @buffer = String.new(capacity: COMPACT_THRESHOLD, encoding: BINARY)
         reset!
       end
@@ -139,12 +146,15 @@ module Tether
 
       def start_payload(match, headers)
         @subject = match[1]
-        @sid = match[2].to_i
+        @sid = match[2]
         @reply_to = match[3]
         @header_size = headers ? match[4].to_i : nil
         @needed = (headers ? match[5] : match[4]).to_i
 
         return fail_protocol!("header size exceeds total size on #{@subject}") if @header_size && @header_size > @needed
+        if @max_payload && @needed > @max_payload
+          return fail_protocol!("frame of #{@needed} bytes exceeds max_payload #{@max_payload} on #{@subject}")
+        end
 
         @state = AWAITING_PAYLOAD
         true

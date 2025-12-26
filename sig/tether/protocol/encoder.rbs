@@ -5,7 +5,9 @@ module Tether
       def self.hpub: (String subject, String? payload, Headers | String headers, ?String? reply_to) -> String
       def self.sub: (String subject, Integer | String sid, ?queue: String?) -> String
       def self.unsub: (Integer | String sid, ?Integer? max_msgs) -> String
-      def self.connect: (Hash[Symbol | String, untyped] options) -> String
+      DEFAULT_CONNECT: Hash[Symbol, untyped]
+
+      def self.connect: (?Hash[Symbol | String, untyped] options) -> String
     end
   end
 end

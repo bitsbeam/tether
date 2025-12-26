@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "json"
+
 RSpec.describe Tether::Protocol::Encoder do
   describe ".pub" do
     it "encodes a publish" do
@@ -72,9 +74,46 @@ RSpec.describe Tether::Protocol::Encoder do
   end
 
   describe ".connect" do
-    it "encodes the handshake payload as JSON" do
-      expect(described_class.connect(verbose: false, protocol: 1))
-        .to eq(%(CONNECT {"verbose":false,"protocol":1}\r\n))
+    subject(:payload) { JSON.parse(described_class.connect[/\{.*\}/]) }
+
+    it "turns off the server side defaults, which are on when a key is absent" do
+      expect(payload).to include("verbose" => false, "pedantic" => false)
+    end
+
+    it "asks for headers, without which the server rewrites HMSG as MSG and drops the header bytes" do
+      expect(payload).to include("headers" => true)
+    end
+
+    it "asks for no_responders so a request to nobody fails fast instead of timing out" do
+      expect(payload).to include("no_responders" => true)
+    end
+
+    it "asks for protocol 1, without which the server sends no async INFO updates" do
+      expect(payload).to include("protocol" => 1)
+    end
+
+    it "lets a caller override a default" do
+      overridden = JSON.parse(described_class.connect(echo: false, user: "u")[/\{.*\}/])
+
+      expect(overridden).to include("echo" => false, "user" => "u", "headers" => true)
+    end
+
+    it "refuses no_responders without headers, which the server closes the connection over" do
+      expect { described_class.connect(headers: false) }.to raise_error(ArgumentError, /no_responders requires headers/)
+    end
+  end
+
+  describe "subjects that are not ASCII" do
+    it "keeps the frame binary so a binary payload can follow the subject" do
+      frame = described_class.pub("täst", "\xff\xfe".b)
+
+      expect(frame.encoding).to eq(Encoding::BINARY)
+      expect(frame).to eq("PUB t\xC3\xA4st 2\r\n\xFF\xFE\r\n".b)
+    end
+
+    it "keeps SUB and HPUB binary too" do
+      expect(described_class.sub("täst", 1).encoding).to eq(Encoding::BINARY)
+      expect(described_class.hpub("täst", "\x80".b, Tether::Headers["K" => "v"]).encoding).to eq(Encoding::BINARY)
     end
   end
 end

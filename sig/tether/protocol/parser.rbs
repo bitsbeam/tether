@@ -7,8 +7,9 @@ module Tether
       AWAITING_PAYLOAD: Symbol
 
       attr_reader state: Symbol
+      attr_accessor max_payload: Integer?
 
-      def initialize: (_ParserSink sink, ?max_control_line: Integer) -> void
+      def initialize: (_ParserSink sink, ?max_control_line: Integer, ?max_payload: Integer?) -> void
       def <<: (String? data) -> self
       alias parse <<
       def reset!: () -> void

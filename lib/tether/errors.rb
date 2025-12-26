@@ -38,24 +38,38 @@ module Tether
   class NoServersError < ConnectionError; end
 
   # An `-ERR` line received from the server.
+  #
+  # Every entry below is taken from the nats-server source (v2.14) rather than
+  # from documentation. The server writes `-ERR '<description>'` from exactly
+  # three places (`sendErr`, and two raw writes for a stale connection), and its
+  # casing is inconsistent — `Authorization Violation` is title case while
+  # `maximum control line exceeded` is not — so lookup is case insensitive.
+  # Several descriptions embed context (`Permissions Violation for Publish to
+  # "orders.new"`), so lookup is by substring, ordered specific first.
   class ServerError < Error
-    FATAL = true
-    private_constant :FATAL
-
     MAPPING = {
+      "permissions violation" => :PermissionsViolationError,
       "authorization violation" => :AuthorizationError,
       "authentication expired" => :AuthenticationExpiredError,
+      "authentication revoked" => :AuthenticationRevokedError,
       "authentication timeout" => :AuthenticationTimeoutError,
       "stale connection" => :StaleConnectionError,
+      "maximum account active connections exceeded" => :MaxAccountConnectionsError,
       "maximum connections exceeded" => :MaxConnectionsError,
+      "maximum subscriptions exceeded" => :MaxSubscriptionsError,
       "maximum payload violation" => :MaxPayloadViolationError,
       "maximum control line exceeded" => :MaxControlLineError,
-      "slow consumer" => :ServerSlowConsumerError,
-      "permissions violation" => :PermissionsViolationError,
+      "invalid publish subject" => :InvalidPublishSubjectError,
       "invalid subject" => :ServerInvalidSubjectError,
+      "failed account registration" => :FailedAccountRegistrationError,
+      "no responders requires headers support" => :NoRespondersRequiresHeadersError,
+      "connection throttling is active" => :ConnectionThrottledError,
       "secure connection - tls required" => :TLSRequiredError,
       "invalid client protocol" => :InvalidClientProtocolError,
-      "unknown protocol operation" => :UnknownProtocolError
+      "unknown protocol operation" => :UnknownProtocolError,
+      "attempted to connect to route port" => :WrongPortError,
+      "attempted to connect to leaf node port" => :WrongPortError,
+      "attempted to connect to gateway port" => :WrongPortError
     }.freeze
 
     # Builds the most specific {ServerError} subclass for an `-ERR` description.
@@ -64,24 +78,40 @@ module Tether
     # @return [ServerError]
     def self.for(description)
       normalized = description.to_s.downcase
-      name = MAPPING[normalized] || MAPPING.find { |text, _| normalized.start_with?(text) }&.last
+      name = MAPPING[normalized] || MAPPING.find { |text, _| normalized.include?(text) }&.last
       klass = name ? Tether.const_get(name) : self
       klass.new(description)
     end
 
-    # Whether the server closes the connection after sending this error.
+    # Whether the server is expected to close the connection after this error.
+    #
+    # Advisory only, and never a substitute for the connection state itself.
+    # The server sends `maximum subscriptions exceeded` from two paths that are
+    # indistinguishable on the wire: one leaves the connection up, the other
+    # closes it 20ms later. Reconnect must therefore be driven by the socket
+    # reaching EOF; this predicate only says whether to expect that.
     #
     # @return [Boolean]
+    def self.fatal?
+      true
+    end
+
+    # @return [Boolean]
     def fatal?
-      FATAL
+      self.class.fatal?
     end
   end
 
-  # Raised when the connection is not authorized for the requested operation.
+  # Raised when the account presented at connect time is not authorized.
   class AuthorizationError < ServerError; end
 
   # Raised when the credentials presented at connect time have expired.
+  # Covers both the user scoped and account scoped descriptions.
   class AuthenticationExpiredError < ServerError; end
+
+  # Raised when the credentials presented at connect time have been revoked.
+  # Distinct from expiry: retrying with the same credentials cannot succeed.
+  class AuthenticationRevokedError < ServerError; end
 
   # Raised when the server times out waiting for authentication.
   class AuthenticationTimeoutError < ServerError; end
@@ -89,8 +119,11 @@ module Tether
   # Raised when the server drops a connection that stopped answering PING.
   class StaleConnectionError < ServerError; end
 
-  # Raised when the account's connection limit is reached.
+  # Raised when the server's global connection limit is reached.
   class MaxConnectionsError < ServerError; end
+
+  # Raised when the account's active connection limit is reached.
+  class MaxAccountConnectionsError < ServerError; end
 
   # Raised when the server rejects a payload larger than max_payload.
   class MaxPayloadViolationError < ServerError; end
@@ -98,8 +131,11 @@ module Tether
   # Raised when a control line exceeds the server's limit.
   class MaxControlLineError < ServerError; end
 
-  # Raised when a subject or queue group is rejected by the server.
-  class ServerInvalidSubjectError < ServerError; end
+  # Raised when CONNECT asks for no_responders without headers support.
+  class NoRespondersRequiresHeadersError < ServerError; end
+
+  # Raised when the server is shedding load and the client should back off.
+  class ConnectionThrottledError < ServerError; end
 
   # Raised when the server requires TLS and the client did not upgrade.
   class TLSRequiredError < ServerError; end
@@ -110,20 +146,55 @@ module Tether
   # Raised when the server cannot parse a command the client sent.
   class UnknownProtocolError < ServerError; end
 
-  # Raised when the server signals that this client is not keeping up.
-  # The server does not close the connection for this error.
-  class ServerSlowConsumerError < ServerError
+  # Raised when the client connected to a route, leafnode, or gateway port
+  # instead of the client port. Reconnecting cannot help.
+  class WrongPortError < ServerError; end
+
+  # Raised when a subscription names a subject the server rejects.
+  # The server does not close the connection for this error: its parser
+  # deliberately swallows the error so a bad subject is not a parse failure.
+  class ServerInvalidSubjectError < ServerError
     # @return [Boolean]
-    def fatal?
+    def self.fatal?
+      false
+    end
+  end
+
+  # Raised when a publish names a malformed subject, in pedantic mode.
+  # The server does not close the connection for this error.
+  class InvalidPublishSubjectError < ServerError
+    # @return [Boolean]
+    def self.fatal?
+      false
+    end
+  end
+
+  # Raised when the server fails to register the connection's account.
+  # The server does not close the connection for this error.
+  class FailedAccountRegistrationError < ServerError
+    # @return [Boolean]
+    def self.fatal?
+      false
+    end
+  end
+
+  # Raised when the subscription limit is reached.
+  #
+  # Reported as non fatal because the ordinary over-limit SUB leaves the
+  # connection usable, but the account limit path sends the same text and then
+  # closes. See {ServerError.fatal?}.
+  class MaxSubscriptionsError < ServerError
+    # @return [Boolean]
+    def self.fatal?
       false
     end
   end
 
   # Raised when publishing to or subscribing to a subject the user cannot access.
-  # The server does not close the connection for this error.
+  # The server does not close the connection for any of its seven variants.
   class PermissionsViolationError < ServerError
     # @return [Boolean]
-    def fatal?
+    def self.fatal?
       false
     end
   end

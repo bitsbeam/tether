@@ -28,7 +28,16 @@ RSpec.describe Tether::Headers do
       headers = described_class.parse("NATS/1.0 100 Idle Heartbeat\r\nNats-Last-Consumer: 5\r\n\r\n")
 
       expect(headers).to be_idle_heartbeat
+      expect(headers).not_to be_flow_control
       expect(headers["Nats-Last-Consumer"]).to eq("5")
+    end
+
+    it "tells flow control apart from a heartbeat, which share status 100" do
+      headers = described_class.parse("NATS/1.0 100 FlowControl Request\r\n\r\n")
+
+      expect(headers).to be_control
+      expect(headers).to be_flow_control
+      expect(headers).not_to be_idle_heartbeat
     end
 
     it "keeps every value of a repeated key" do
@@ -73,6 +82,27 @@ RSpec.describe Tether::Headers do
 
     it "ends with a blank line so the byte count matches the wire format" do
       expect(described_class["K" => "v"].to_wire).to end_with("\r\n\r\n")
+    end
+  end
+
+  describe "rejecting values that would forge header lines" do
+    it "refuses a value containing CRLF, which the server would read as another header" do
+      expect { described_class.new["X"] = "a\r\nNats-Msg-Id: forged" }
+        .to raise_error(ArgumentError, /may not span lines/)
+    end
+
+    it "refuses a value containing a bare LF" do
+      expect { described_class.new.add("X", "a\nb") }.to raise_error(ArgumentError, /may not span lines/)
+    end
+
+    it "refuses a key that is not an RFC 7230 token" do
+      expect { described_class.new["Bad Key"] = "v" }.to raise_error(ArgumentError, /invalid header name/)
+      expect { described_class.new["X:Y"] = "v" }.to raise_error(ArgumentError, /invalid header name/)
+    end
+
+    it "keeps the irregular casing the server matches byte for byte" do
+      expect(described_class["Nats-TTL" => "60"].to_wire).to include("Nats-TTL: 60")
+      expect(described_class["Nats-UpTo-Sequence" => "9"].to_wire).to include("Nats-UpTo-Sequence: 9")
     end
   end
 
