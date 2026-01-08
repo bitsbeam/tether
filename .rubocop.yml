@@ -12,6 +12,7 @@ Metrics/ClassLength:
   Exclude:
     - "lib/tether/protocol/parser.rb"
     - "lib/tether/headers.rb"
+    - "lib/tether/client.rb"
 
 Metrics/AbcSize:
   Max: 30
@@ -32,3 +33,5 @@ AllCops:
 
 Naming/PredicateMethod:
   AllowBangMethods: true
+  AllowedMethods:
+    - flush

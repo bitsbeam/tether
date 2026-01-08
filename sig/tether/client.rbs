@@ -1,0 +1,40 @@
+module Tether
+  def self.connect: (?String? uri, **untyped options) ?{ (Client) -> untyped } -> untyped
+
+  class Client
+    DEFAULT_URI: String
+    DEFAULT_CONNECT_TIMEOUT: Integer
+    DEFAULT_FLUSH_TIMEOUT: Integer
+
+    attr_reader server_info: Hash[String, untyped]?
+    attr_reader status: Symbol
+    attr_reader last_error: Exception?
+
+    def self.connect: (?String? uri, **untyped options) ?{ (Client) -> untyped } -> untyped
+
+    def initialize: (?String? uri, **untyped options) -> void
+    def connect: (?timeout: Numeric?) -> self
+    def publish: (String subject, ?String? payload, ?reply_to: String?, ?headers: Headers?) -> void
+    def subscribe: (String subject, ?queue: String?, ?max_pending: Integer) ?{ (Msg) -> void } -> Subscription
+    def unsubscribe: (Subscription subscription, ?Integer? max_msgs) -> void
+    def flush: (?timeout: Numeric?) -> bool
+    def close: () -> void
+    def connected?: () -> bool
+    def closed?: () -> bool
+    def on_error: () { (Exception) -> void } -> void
+    def max_payload: () -> Integer?
+
+    private
+
+    def build_dispatcher: () -> Dispatcher
+    def read_server_info: (Deadline deadline) -> void
+    def connect_options: () -> Hash[Symbol, untyped]
+    def start_reader: () -> Thread
+    def read_loop: () -> void
+    def next_sid: () -> String
+    def check_payload_size!: (String subject, String frame) -> void
+    def report_slow_consumer: (Subscription subscription) -> void
+    def record_error: (Exception error) -> void
+    def ensure_connected!: () -> void
+  end
+end
