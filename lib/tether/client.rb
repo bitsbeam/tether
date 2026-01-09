@@ -12,6 +12,7 @@ module Tether
     DEFAULT_URI = "nats://127.0.0.1:4222"
     DEFAULT_CONNECT_TIMEOUT = 2
     DEFAULT_FLUSH_TIMEOUT = 10
+    DEFAULT_REQUEST_TIMEOUT = 2
 
     # @return [Hash, nil] the INFO the server sent on connect
     attr_reader :server_info
@@ -94,8 +95,8 @@ module Tether
     def subscribe(subject, queue: nil, max_pending: Subscription::DEFAULT_MAX_PENDING, &callback)
       ensure_connected!
       subscription = Subscription.new(
-        sid: next_sid, subject: subject, queue_group: queue,
-        max_pending: max_pending, on_slow_consumer: method(:report_slow_consumer), &callback
+        sid: next_sid, subject: subject, queue_group: queue, max_pending: max_pending,
+        on_slow_consumer: method(:report_slow_consumer), responder: self, &callback
       )
       @dispatcher.add(subscription)
       @transport.write(Protocol::Encoder.sub(subject, subscription.sid, queue: queue))
@@ -112,6 +113,28 @@ module Tether
       @dispatcher.remove(subscription.sid)
       subscription.close
       nil
+    end
+
+    # Publishes a request and waits for the first reply.
+    #
+    # Every request on a connection shares one inbox subscription; replies are
+    # demultiplexed in memory, so N concurrent requests cost one subscription.
+    #
+    # @param subject [String]
+    # @param payload [String, nil]
+    # @param timeout [Numeric, nil]
+    # @param headers [Headers, nil]
+    # @return [Msg]
+    # @raise [NoRespondersError] if nobody is subscribed to the subject
+    # @raise [TimeoutError] if no reply arrives in time
+    def request(subject, payload = nil, timeout: DEFAULT_REQUEST_TIMEOUT, headers: nil)
+      ensure_connected!
+      inbox_mux.request(subject, payload, deadline: Deadline.after(timeout), headers: headers)
+    end
+
+    # @return [String] a fresh inbox subject, unrelated to the shared request inbox
+    def new_inbox
+      "#{InboxMux::INBOX_PREFIX}.#{NUID.next}"
     end
 
     # Round trips a PING, which the server answers only after everything sent
@@ -137,6 +160,7 @@ module Tether
       return if @status == :closed
 
       @status = :closed
+      @inbox_mux&.close
       @transport&.close
       @reader.join(1) if @reader && @reader != Thread.current
       @dispatcher.clear
@@ -162,10 +186,17 @@ module Tether
       nil
     end
 
+    # @return [Integer] subscriptions currently registered, including the shared request inbox
+    def subscription_count = @dispatcher.size
+
     # @return [Integer] largest payload the server accepts
     def max_payload = @server_info&.fetch("max_payload", nil)
 
     private
+
+    def inbox_mux
+      @lock.synchronize { @inbox_mux ||= InboxMux.new(self, max_pending: @options.fetch(:max_pending, Subscription::DEFAULT_MAX_PENDING)) }
+    end
 
     def build_dispatcher
       Dispatcher.new(

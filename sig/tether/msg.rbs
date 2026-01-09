@@ -10,6 +10,7 @@ module Tether
     def headers: () -> Headers?
     def status: () -> Integer?
     def no_responders?: () -> bool
+    def respond: (?String? payload, ?headers: Headers?) -> void
     def empty?: () -> bool
     def inspect: () -> String
   end

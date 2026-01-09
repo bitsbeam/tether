@@ -24,14 +24,19 @@ module Tether
     # @return [Integer] messages dropped because the queue was full
     attr_reader :dropped
 
+    # @return [Client, nil] used by {Msg#respond}
+    attr_reader :responder
+
     # @param sid [String]
     # @param subject [String]
     # @param queue_group [String, nil]
     # @param max_pending [Integer] queue depth before this is a slow consumer
     # @param on_slow_consumer [Proc, nil] called with self when a message is dropped
+    # @param responder [Client, nil] lets {Msg#respond} publish a reply
     # @param callback [Proc, nil] when given, messages are delivered to it on a worker thread
     def initialize(sid:, subject:, queue_group: nil, max_pending: DEFAULT_MAX_PENDING,
-                   on_slow_consumer: nil, &callback)
+                   on_slow_consumer: nil, responder: nil, &callback)
+      @responder = responder
       @sid = sid
       @subject = subject
       @queue_group = queue_group

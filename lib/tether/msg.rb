@@ -48,6 +48,21 @@ module Tether
       headers&.no_responders? || false
     end
 
+    # Publishes back to this message's reply subject.
+    #
+    # @param payload [String, nil]
+    # @param headers [Headers, nil]
+    # @return [void]
+    # @raise [Error] if the message carries no reply subject
+    def respond(payload = nil, headers: nil)
+      raise Error, "message on #{@subject} has no reply subject" unless @reply_to
+
+      responder = @subscription&.responder
+      raise Error, "message on #{@subject} is not attached to a connection" unless responder
+
+      responder.publish(@reply_to, payload, headers: headers)
+    end
+
     # @return [Boolean] whether this carries a payload
     def empty?
       @data.nil? || @data.empty?

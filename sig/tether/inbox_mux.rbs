@@ -1,0 +1,20 @@
+module Tether
+  class InboxMux
+    INBOX_PREFIX: String
+
+    attr_reader prefix: String
+
+    def initialize: (Client client, ?prefix: String?, ?max_pending: Integer) -> void
+    def request: (String subject, ?String? payload, ?deadline: Deadline, ?headers: Headers?) -> Msg
+    def start: () -> Subscription
+    def started?: () -> bool
+    def pending: () -> Integer
+    def close: () -> void
+
+    private
+
+    def await: (Thread::Queue waiter, String subject, Deadline deadline) -> Msg
+    def resolve: (Msg msg) -> void
+    def next_token: () -> String
+  end
+end
