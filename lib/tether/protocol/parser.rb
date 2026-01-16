@@ -26,6 +26,10 @@ module Tether
     # - `on_protocol_error(message)`
     class Parser
       COMPACT_THRESHOLD = 64 * 1024
+
+      # A leftover at or below this is copied out rather than left in place, so
+      # the buffer does not grow across reads and make every later append
+      # target a large string.
       SHORT_REMAINDER = 1024
       SNIPPET_LIMIT = 64
 
@@ -96,12 +100,16 @@ module Tether
         clear_frame
       end
 
+      # A broken parser consumes nothing further; the client is expected to
+      # tear the connection down.
+      #
       # @return [Boolean] whether a protocol violation stopped this parser
       def broken?
         @broken
       end
 
-      # @return [Integer] bytes buffered but not yet consumed
+      # @return [Integer] bytes buffered but not yet consumed, which is the tail
+      #   of a frame still arriving
       def pending_bytes
         @buffer.bytesize - @position
       end

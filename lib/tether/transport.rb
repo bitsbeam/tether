@@ -26,14 +26,20 @@ module Tether
       new(uri).tap { _1.open(deadline) }
     end
 
-    # @param uri [String, URI::Generic]
+    # Prepares a transport without opening it.
+    #
+    # @param uri [String, URI::Generic] a bare host:port is treated as nats://
     def initialize(uri)
       @uri = normalize(uri)
       @lock = Mutex.new
     end
 
+    # Opens the socket with TCP_NODELAY set, since the protocol is latency
+    # sensitive and frames are already written whole.
+    #
     # @param deadline [Deadline]
     # @return [self]
+    # @raise [ConnectionError]
     def open(deadline = Deadline.infinite)
       @socket = Socket.tcp(@uri.host, @uri.port, connect_timeout: deadline.remaining)
       @socket.sync = true
@@ -76,6 +82,8 @@ module Tether
       raise ConnectionClosedError, "write failed on #{@uri}: #{e.message}"
     end
 
+    # Closes the socket, which also unblocks a read waiting on it.
+    #
     # @return [void]
     def close
       @lock.synchronize do
@@ -86,7 +94,7 @@ module Tether
       @socket = nil
     end
 
-    # @return [Boolean]
+    # @return [Boolean] whether the socket is gone; every read and write raises after this
     def closed?
       @socket.nil? || @socket.closed?
     end

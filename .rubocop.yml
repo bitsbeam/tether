@@ -51,3 +51,8 @@ Metrics/CyclomaticComplexity:
 Metrics/PerceivedComplexity:
   Exclude:
     - "lib/tether/protocol/parser.rb"
+
+# Anonymous argument forwarding erases the parameter names the YARD docs and
+# the RBS signatures refer to, on methods that are public API.
+Style/ArgumentsForwarding:
+  Enabled: false

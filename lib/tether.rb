@@ -20,9 +20,9 @@ module Tether
   # Connects to a NATS server.
   #
   # @param uri [String, nil] defaults to NATS_URL, then nats://127.0.0.1:4222
-  # @param options [Hash] CONNECT overrides plus :connect_timeout
+  # @param options [Hash{Symbol => Object}] CONNECT overrides plus :connect_timeout
   # @return [Client, Object] the client, or the block's value when a block is given
-  def self.connect(uri = nil, **, &)
-    Client.connect(uri, **, &)
+  def self.connect(uri = nil, **options, &)
+    Client.connect(uri, **options, &)
   end
 end

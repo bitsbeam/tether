@@ -33,6 +33,8 @@ module Tether
       end
     end
 
+    # Seeds a generator with its own random prefix, so two instances in the
+    # same process never collide.
     def initialize
       reseed!
     end

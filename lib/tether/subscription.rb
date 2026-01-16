@@ -27,6 +27,9 @@ module Tether
     # @return [Client, nil] used by {Msg#respond}
     attr_reader :responder
 
+    # Starts a worker thread when a callback is given. Without one, messages
+    # queue up until {#next_message} takes them on the caller's thread.
+    #
     # @param sid [String]
     # @param subject [String]
     # @param queue_group [String, nil]
@@ -78,12 +81,15 @@ module Tether
       msg
     end
 
+    # Depth of the queue between the reader thread and this subscription's
+    # worker. Growth here means the handler is not keeping up.
+    #
     # @return [Integer] messages waiting to be handled
     def pending
       @queue.size
     end
 
-    # @return [Boolean]
+    # @return [Boolean] whether delivery has stopped; a closed subscription never resumes
     def closed?
       @queue.closed?
     end

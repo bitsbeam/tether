@@ -25,11 +25,14 @@ module Tether
 
     # Connects and returns a client, yielding it and closing after if a block is given.
     #
+    # Connects, and when a block is given yields the client and closes it after.
+    #
     # @param uri [String, nil]
-    # @param options [Hash] CONNECT overrides, plus :connect_timeout and :max_pending
-    # @return [Client, Object]
-    def self.connect(uri = nil, **)
-      client = new(uri, **)
+    # @param options [Hash{Symbol => Object}] CONNECT overrides, plus :connect_timeout and :max_pending
+    # @return [Client, Object] the client, or the block's value
+    # @raise [ConnectionError] if the server cannot be reached
+    def self.connect(uri = nil, **options)
+      client = new(uri, **options)
       client.connect
       return client unless block_given?
 
@@ -40,8 +43,11 @@ module Tether
       end
     end
 
+    # Builds a client without opening a socket. Call {#connect}, or use
+    # {.connect} to do both.
+    #
     # @param uri [String, nil]
-    # @param options [Hash]
+    # @param options [Hash{Symbol => Object}]
     def initialize(uri = nil, **options)
       @uri = uri || ENV.fetch("NATS_URL", DEFAULT_URI)
       @options = options
@@ -69,11 +75,18 @@ module Tether
       self
     end
 
+    # Publishes a message.
+    #
+    # Fire and forget: the server sends no acknowledgement, so a successful
+    # return means the frame reached the socket, not that the server processed
+    # it. Follow with {#flush} when you need that guarantee.
+    #
     # @param subject [String]
     # @param payload [String, nil]
     # @param reply_to [String, nil]
     # @param headers [Headers, nil]
     # @return [void]
+    # @raise [MaxPayloadError] if the frame exceeds what the server advertised
     def publish(subject, payload = nil, reply_to: nil, headers: nil)
       ensure_connected!
       frame = if headers
@@ -103,6 +116,12 @@ module Tether
       subscription
     end
 
+    # Cancels a subscription.
+    #
+    # With max_msgs the server keeps delivering until that many more messages
+    # have arrived, so the subscription stays registered and its worker keeps
+    # running until then.
+    #
     # @param subscription [Subscription]
     # @param max_msgs [Integer, nil] unsubscribe only after this many more messages
     # @return [void]
@@ -132,6 +151,9 @@ module Tether
       inbox_mux.request(subject, payload, deadline: Deadline.after(timeout), headers: headers)
     end
 
+    # Builds a reply subject for a subscribe-then-publish exchange, which is
+    # what you want when a single request may draw several replies.
+    #
     # @return [String] a fresh inbox subject, unrelated to the shared request inbox
     def new_inbox
       "#{InboxMux::INBOX_PREFIX}.#{NUID.next}"
@@ -168,10 +190,10 @@ module Tether
       nil
     end
 
-    # @return [Boolean]
+    # @return [Boolean] whether the handshake completed and the socket is live
     def connected? = @status == :connected
 
-    # @return [Boolean]
+    # @return [Boolean] whether {#close} has run; a closed client cannot be reopened
     def closed? = @status == :closed
 
     # Registers a handler for errors that arrive outside any call.
@@ -186,9 +208,15 @@ module Tether
       nil
     end
 
+    # Counts live subscriptions. Request/reply adds exactly one, however many
+    # requests are in flight.
+    #
     # @return [Integer] subscriptions currently registered, including the shared request inbox
     def subscription_count = @dispatcher.size
 
+    # The ceiling the server advertised in INFO. {#publish} refuses anything
+    # larger rather than letting the server close the connection over it.
+    #
     # @return [Integer] largest payload the server accepts
     def max_payload = @server_info&.fetch("max_payload", nil)
 
