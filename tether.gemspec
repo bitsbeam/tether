@@ -9,8 +9,8 @@ Gem::Specification.new do |spec|
   spec.email = ["d.vorotilin@gmail.com"]
 
   spec.summary = "A NATS client for Ruby"
-  spec.description = "A NATS and JetStream client for Ruby, built around explicit deadlines and " \
-                     "per-subscription dispatch so concurrent use of one connection is safe by design."
+  spec.description = "A NATS client for Ruby, built around explicit deadlines and per-subscription " \
+                     "dispatch so one connection is safe to use from many threads at once."
   spec.homepage = "https://github.com/bitsbeam/tether"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.2.0"
