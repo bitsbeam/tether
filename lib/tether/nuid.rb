@@ -7,8 +7,13 @@ module Tether
   # by a 10 character base62 sequence, incremented by a random step so that
   # identifiers are neither guessable nor collision prone across processes.
   #
-  # Instances are not thread safe. Use {NUID.next} for the process wide,
-  # mutex guarded generator.
+  # Use {NUID.next}. It keeps one generator per thread rather than sharing a
+  # locked one, so there is no contention and no shared counter to race over.
+  # Two generators collide only if their 12 character random prefixes do, which
+  # is the same assumption that makes NUIDs unique across processes.
+  #
+  # Fibers on a thread share its generator. They never run concurrently and
+  # generating an identifier blocks on nothing, so nothing can interleave.
   class NUID
     DIGITS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
     BASE = 62
@@ -21,20 +26,25 @@ module Tether
     PADDING = ("0" * SEQUENCE_LENGTH).freeze
     private_constant :PADDING
 
-    @mutex = Mutex.new
-    @generator = nil
+    STORAGE_KEY = :tether_nuid
+    private_constant :STORAGE_KEY
 
     class << self
-      # Generates an identifier from the process wide generator.
+      # Generates an identifier from this thread's generator, creating one on
+      # first use.
       #
       # @return [String] a 22 character identifier
       def next
-        @mutex.synchronize { (@generator ||= new).next }
+        thread = Thread.current
+        generator = thread.thread_variable_get(STORAGE_KEY)
+        generator or thread.thread_variable_set(STORAGE_KEY, generator = new)
+        generator.next
       end
     end
 
-    # Seeds a generator with its own random prefix, so two instances in the
-    # same process never collide.
+    # Seeds a generator with its own random prefix, so two generators in the
+    # same process do not collide. Private: use {NUID.next}, which keeps one
+    # per thread; a generator shared across threads would race on its counter.
     def initialize
       reseed!
     end
@@ -54,6 +64,8 @@ module Tether
       end
       buffer
     end
+
+    private_class_method :new
 
     private
 

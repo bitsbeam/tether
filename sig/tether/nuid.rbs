@@ -11,6 +11,8 @@ module Tether
 
     def self.next: () -> String
 
+    private
+
     def initialize: () -> void
     def next: () -> String
 

@@ -1,23 +1,8 @@
 # Tether
 
-A NATS client for Ruby, written from scratch around one idea: a single connection should be
-safe to use from many threads at once.
+A NATS client for Ruby
 
-Every protocol detail in it is derived from the nats-server source rather than from
-documentation, and the concurrency behaviour is covered by tests that publish from many threads
-at once and assert nothing interleaves.
-
-## Status
-
-Early. The core connection works and is tested against a real server, but this is **not yet
-usable in production**:
-
-| | |
-|---|---|
-| Working | connect, publish, subscribe, queue groups, wildcards, headers, request/reply, backpressure, graceful close |
-| Missing | reconnection, TLS, JetStream, KV, Object Store, services, WebSocket, nkeys/JWT auth |
-
-A dropped connection currently stays dropped. Reconnection is the next thing being built.
+Motto: a single connection is safe to use from many threads.
 
 ## Installation
 
@@ -32,11 +17,11 @@ Ruby 3.2 or newer. No runtime dependencies.
 ```ruby
 require "tether"
 
-Tether.connect("nats://127.0.0.1:4222") do |nc|
-  nc.subscribe("greet.>") { |msg| puts "#{msg.subject}: #{msg.data}" }
-  nc.flush
+Tether.connect("nats://127.0.0.1:4222") do |connection|
+  connection.subscribe("greet.>") { |msg| puts "#{msg.subject}: #{msg.data}" }
+  connection.flush
 
-  nc.publish("greet.world", "hello")
+  connection.publish("greet.world", "hello")
   sleep 0.1
 end
 ```
