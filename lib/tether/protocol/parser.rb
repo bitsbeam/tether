@@ -25,38 +25,94 @@ module Tether
     # - `on_error(description)` for an `-ERR` line
     # - `on_protocol_error(message)`
     class Parser
+      # A consumed prefix this large is dropped even if the remainder is long.
       COMPACT_THRESHOLD = 64 * 1024
 
       # A leftover at or below this is copied out rather than left in place, so
       # the buffer does not grow across reads and make every later append
       # target a large string.
       SHORT_REMAINDER = 1024
+      # How much of an offending control line is quoted back in an error.
       SNIPPET_LIMIT = 64
 
+      # {#state} while the next thing expected is a control line.
       AWAITING_CONTROL_LINE = :control
+
+      # {#state} while a frame's payload is still arriving.
       AWAITING_PAYLOAD = :payload
 
+      # Matched at the read position with \G, so it anchors instead of scanning
+      # forward, and read through String#index so no MatchData is allocated.
+      #
+      # @api private
       MSG_LINE = /\GMSG[ \t]+(\S+)[ \t]+(\S+)[ \t]+(?:(\S+)[ \t]+)?(\d{1,9})[ \t]*\r\n/i
+      # As {MSG_LINE}, with the header block's size ahead of the total size.
+      #
+      # @api private
       HMSG_LINE = /\GHMSG[ \t]+(\S+)[ \t]+(\S+)[ \t]+(?:(\S+)[ \t]+)?(\d{1,9})[ \t]+(\d{1,9})[ \t]*\r\n/i
 
+      # The first byte of the CRLF a payload must end with. The bytes below are
+      # what the control line dispatch compares against, in both cases because
+      # the protocol is case insensitive.
+      #
+      # @api private
       CR = 13
+      # The second byte of the CRLF a payload must end with.
+      #
+      # @api private
       LF = 10
+      # First byte of a MSG control line.
+      #
+      # @api private
       UPPER_M = 77
+      # First byte of a MSG control line, lower case.
+      #
+      # @api private
       LOWER_M = 109
+      # First byte of an HMSG control line.
+      #
+      # @api private
       UPPER_H = 72
+      # First byte of an HMSG control line, lower case.
+      #
+      # @api private
       LOWER_H = 104
+      # First byte of a PING or PONG line.
+      #
+      # @api private
       UPPER_P = 80
+      # First byte of a PING or PONG line, lower case.
+      #
+      # @api private
       LOWER_P = 112
+      # First byte of an INFO line.
+      #
+      # @api private
       UPPER_I = 73
+      # First byte of an INFO line, lower case.
+      #
+      # @api private
       LOWER_I = 105
+      # First byte of a +OK line.
+      #
+      # @api private
       PLUS = 43
+      # First byte of an -ERR line.
+      #
+      # @api private
       MINUS = 45
+      # Start of the range {#verb?} case folds over.
+      #
+      # @api private
       UPPER_A = 65
+      # End of the range {#verb?} case folds over.
+      #
+      # @api private
       UPPER_Z = 90
+      # Distance from an upper case letter to its lower case form.
+      #
+      # @api private
       CASE_SHIFT = 32
-      private_constant :MSG_LINE, :HMSG_LINE, :CR, :LF, :UPPER_A, :UPPER_Z, :CASE_SHIFT,
-                       :UPPER_M, :LOWER_M, :UPPER_H, :LOWER_H, :UPPER_P, :LOWER_P,
-                       :UPPER_I, :LOWER_I, :PLUS, :MINUS
 
       # @return [Symbol] :control or :payload
       def state = @awaiting_payload ? AWAITING_PAYLOAD : AWAITING_CONTROL_LINE

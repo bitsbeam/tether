@@ -23,11 +23,15 @@ module Tether
     MAX_SEQUENCE = BASE**SEQUENCE_LENGTH
     MIN_INCREMENT = 33
     MAX_INCREMENT = 333
+    # Reserves room for the sequence so the identifier is built in one string.
+    #
+    # @api private
     PADDING = ("0" * SEQUENCE_LENGTH).freeze
-    private_constant :PADDING
 
+    # Where each thread keeps its generator.
+    #
+    # @api private
     STORAGE_KEY = :tether_nuid
-    private_constant :STORAGE_KEY
 
     class << self
       # Generates an identifier from this thread's generator, creating one on
