@@ -43,75 +43,41 @@ module Tether
 
       # Matched at the read position with \G, so it anchors instead of scanning
       # forward, and read through String#index so no MatchData is allocated.
-      #
-      # @api private
       MSG_LINE = /\GMSG[ \t]+(\S+)[ \t]+(\S+)[ \t]+(?:(\S+)[ \t]+)?(\d{1,9})[ \t]*\r\n/i
       # As {MSG_LINE}, with the header block's size ahead of the total size.
-      #
-      # @api private
       HMSG_LINE = /\GHMSG[ \t]+(\S+)[ \t]+(\S+)[ \t]+(?:(\S+)[ \t]+)?(\d{1,9})[ \t]+(\d{1,9})[ \t]*\r\n/i
 
       # The first byte of the CRLF a payload must end with. The bytes below are
       # what the control line dispatch compares against, in both cases because
       # the protocol is case insensitive.
-      #
-      # @api private
       CR = 13
       # The second byte of the CRLF a payload must end with.
-      #
-      # @api private
       LF = 10
       # First byte of a MSG control line.
-      #
-      # @api private
       UPPER_M = 77
       # First byte of a MSG control line, lower case.
-      #
-      # @api private
       LOWER_M = 109
       # First byte of an HMSG control line.
-      #
-      # @api private
       UPPER_H = 72
       # First byte of an HMSG control line, lower case.
-      #
-      # @api private
       LOWER_H = 104
       # First byte of a PING or PONG line.
-      #
-      # @api private
       UPPER_P = 80
       # First byte of a PING or PONG line, lower case.
-      #
-      # @api private
       LOWER_P = 112
       # First byte of an INFO line.
-      #
-      # @api private
       UPPER_I = 73
       # First byte of an INFO line, lower case.
-      #
-      # @api private
       LOWER_I = 105
       # First byte of a +OK line.
-      #
-      # @api private
       PLUS = 43
       # First byte of an -ERR line.
-      #
-      # @api private
       MINUS = 45
       # Start of the range {#verb?} case folds over.
-      #
-      # @api private
       UPPER_A = 65
       # End of the range {#verb?} case folds over.
-      #
-      # @api private
       UPPER_Z = 90
       # Distance from an upper case letter to its lower case form.
-      #
-      # @api private
       CASE_SHIFT = 32
 
       # @return [Symbol] :control or :payload

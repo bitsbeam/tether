@@ -10,8 +10,6 @@ module Tether
   class Headers
     VERSION = "NATS/1.0"
     # Line terminator inside a header block.
-    #
-    # @api private
     CRLF = "\r\n"
 
     # Status codes the server puts on the version line. Taken from the
@@ -36,8 +34,6 @@ module Tether
     TOKEN = /\A[!#$%&'*+\-.^_`|~0-9A-Za-z]+\z/
     # A value matching this would forge a header line, since the server does
     # not validate the block it forwards.
-    #
-    # @api private
     FORBIDDEN_IN_VALUE = /[\r\n]/
 
     # @return [Integer, nil] status code from the version line
