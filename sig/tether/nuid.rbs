@@ -1,5 +1,5 @@
 module Tether
-  class NUID
+  module NUID
     DIGITS: String
     BASE: Integer
     PREFIX_LENGTH: Integer
@@ -8,16 +8,14 @@ module Tether
     MAX_SEQUENCE: Integer
     MIN_INCREMENT: Integer
     MAX_INCREMENT: Integer
+    PADDING: String
+    LOCK: Thread::Mutex
 
     def self.next: () -> String
 
     private
 
-    def initialize: () -> void
-    def next: () -> String
-
-    private
-
-    def reseed!: () -> void
+    def self.render: () -> String
+    def self.reseed!: () -> void
   end
 end
