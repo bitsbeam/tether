@@ -66,6 +66,10 @@ module Tether
       headers
     end
 
+    # Splits the status and description off the version line, which carries
+    # neither on an ordinary message.
+    #
+    # @param version [String] the first line of a header block
     # @return [Array(Integer, nil), Array(nil, nil)]
     def self.parse_version_line(version)
       remainder = version[VERSION.length..].to_s.strip
@@ -74,7 +78,6 @@ module Tether
       code, _, text = remainder.partition(" ")
       [Integer(code, exception: false), text.strip.empty? ? nil : text.strip]
     end
-    private_class_method :parse_version_line
 
     # Builds headers from a hash, so the common case needs no braces.
     #
