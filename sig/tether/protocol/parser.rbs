@@ -9,6 +9,18 @@ module Tether
       attr_reader state: Symbol
       attr_accessor max_payload: Integer?
 
+      @sink: _ParserSink
+      @max_control_line: Integer
+      @buffer: String
+      @position: Integer
+      @awaiting_payload: bool
+      @broken: bool
+      @subject: String?
+      @sid: String?
+      @reply_to: String?
+      @needed: Integer?
+      @header_size: Integer?
+
       def initialize: (_ParserSink sink, ?max_control_line: Integer, ?max_payload: Integer?) -> void
       def <<: (String? data) -> self
       alias parse <<
@@ -19,17 +31,12 @@ module Tether
       private
 
       def run: () -> void
-      def consume_control_line: () -> bool
-      def match_message_line: () -> bool?
-      def start_payload: (MatchData match, bool headers) -> bool
+      def reject_sizes: (String subject, Integer? header_size, Integer needed) -> bool
       def dispatch: (Integer start, Integer line_end) -> bool
       def dispatch_ping_pong: (Integer start, Integer line_end) -> bool
       def dispatch_ok: (Integer start, Integer line_end) -> bool
       def dispatch_err: (Integer start, Integer line_end) -> bool
       def dispatch_info: (Integer start, Integer line_end) -> bool
-      def consume_payload: () -> bool
-      def payload_terminated?: () -> bool
-      def emit_message: () -> void
       def verb?: (Integer start, Integer limit, String verb) -> bool
       def trimmed: (Integer from, Integer to) -> String
       def snippet: (Integer start, Integer line_end) -> String

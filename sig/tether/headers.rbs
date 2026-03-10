@@ -19,7 +19,10 @@ module Tether
     attr_reader status: Integer?
     attr_reader description: String?
 
+    @entries: Hash[String, Array[String]]
+
     def self.parse: (String? bytes) -> Headers
+    def self.parse_version_line: (String version) -> ([Integer?, String?])
     def self.[]: (entries) -> Headers
 
     def initialize: (?entries: entries, ?status: Integer?, ?description: String?) -> void

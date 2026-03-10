@@ -11,6 +11,11 @@ module Tether
     PADDING: String
     LOCK: Thread::Mutex
 
+    self.@prefix: String
+    self.@sequence: Integer
+    self.@increment: Integer
+    self.@pid: Integer
+
     def self.next: () -> String
 
     private

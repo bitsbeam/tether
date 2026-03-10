@@ -1,13 +1,19 @@
 module Tether
   module Protocol
     module Encoder
+      DEFAULT_CONNECT: Hash[Symbol, untyped]
+
       def self.pub: (String subject, ?String? payload, ?String? reply_to) -> String
       def self.hpub: (String subject, String? payload, Headers | String headers, ?String? reply_to) -> String
       def self.sub: (String subject, Integer | String sid, ?queue: String?) -> String
       def self.unsub: (Integer | String sid, ?Integer? max_msgs) -> String
-      DEFAULT_CONNECT: Hash[Symbol, untyped]
-
       def self.connect: (?Hash[Symbol | String, untyped] options) -> String
+
+      private
+
+      def self.write_head: (String frame, String verb, String subject, String? reply_to) -> String
+      def self.buffer: (Integer capacity) -> String
+      def self.binary: (String? value) -> String
     end
   end
 end

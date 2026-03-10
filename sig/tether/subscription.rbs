@@ -9,6 +9,12 @@ module Tether
     attr_reader dropped: Integer
     attr_reader responder: Client?
 
+    @queue: Thread::SizedQueue
+    @on_slow_consumer: (^(Subscription) -> void)?
+    @callback: (^(Msg) -> void)?
+    @lock: Thread::Mutex
+    @worker: Thread?
+
     def initialize: (sid: String, subject: String, ?queue_group: String?, ?max_pending: Integer, ?on_slow_consumer: (^(Subscription) -> void)?, ?responder: Client?) ?{ (Msg) -> void } -> void
     def deliver: (Msg msg) -> bool
     def next_message: (?Deadline deadline) -> Msg

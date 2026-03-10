@@ -11,6 +11,18 @@ module Tether
     attr_reader status: Symbol
     attr_reader last_error: Exception?
 
+    @uri: String
+    @options: Hash[Symbol, untyped]
+    @sid_counter: Integer
+    @lock: Thread::Mutex
+    @pongs: Thread::Queue
+    @error_handlers: Array[^(Exception) -> void]
+    @dispatcher: Dispatcher
+    @parser: Protocol::Parser
+    @transport: Transport?
+    @reader: Thread?
+    @inbox_mux: InboxMux?
+
     def self.connect: (?String? uri, **untyped options) ?{ (Client) -> untyped } -> untyped
 
     def initialize: (?String? uri, **untyped options) -> void

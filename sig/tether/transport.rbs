@@ -5,6 +5,9 @@ module Tether
 
     attr_reader uri: URI::Generic
 
+    @socket: Socket?
+    @lock: Thread::Mutex
+
     def self.connect: (String | URI::Generic uri, ?deadline: Deadline) -> Transport
 
     def initialize: (String | URI::Generic uri) -> void

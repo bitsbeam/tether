@@ -4,6 +4,13 @@ module Tether
 
     attr_reader prefix: String
 
+    @client: Client
+    @max_pending: Integer
+    @pending: Hash[String, Thread::Queue]
+    @lock: Thread::Mutex
+    @counter: Integer
+    @subscription: Subscription?
+
     def initialize: (Client client, ?prefix: String?, ?max_pending: Integer) -> void
     def request: (String subject, ?String? payload, ?deadline: Deadline, ?headers: Headers?) -> Msg
     def start: () -> Subscription
