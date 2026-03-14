@@ -17,8 +17,8 @@ module Tether
 
     # Registers a subscription so messages carrying its sid reach it.
     #
-    # @param subscription [Subscription]
-    # @return [Subscription]
+    # @param subscription [Subscription] the subscription to route messages to
+    # @return [Subscription] the subscription that was registered
     def add(subscription)
       @lock.synchronize { @subscriptions[subscription.sid] = subscription }
       subscription
@@ -27,7 +27,7 @@ module Tether
     # Stops routing to a subscription. Messages already in flight for it are
     # dropped when they arrive.
     #
-    # @param sid [String]
+    # @param sid [String] the token the subscription was registered under
     # @return [Subscription, nil] the subscription that was registered, if any
     def remove(sid)
       @lock.synchronize { @subscriptions.delete(sid) }
@@ -35,7 +35,7 @@ module Tether
 
     # Looks up a subscription by the token the server echoed back.
     #
-    # @param sid [String]
+    # @param sid [String] the token echoed back by the server
     # @return [Subscription, nil] nil once the subscription has been removed
     def [](sid)
       @lock.synchronize { @subscriptions[sid] }
@@ -53,7 +53,7 @@ module Tether
 
     # Closes every subscription and empties the registry.
     #
-    # @return [void]
+    # @return [void] nothing
     def clear
       @lock.synchronize { @subscriptions.values.tap { @subscriptions.clear } }.each(&:close)
     end
@@ -63,7 +63,7 @@ module Tether
     # A message whose sid is unknown, because the subscription was cancelled
     # while it was in flight, is dropped rather than raised over.
     #
-    # @return [void]
+    # @return [void] nothing
     def on_msg(subject, sid, reply_to, header_bytes, payload)
       subscription = self[sid] or return
 
@@ -76,34 +76,34 @@ module Tether
 
     # The connection must answer promptly or the server drops it as stale.
     #
-    # @return [void]
+    # @return [void] nothing
     def on_ping = @handlers[:ping]&.call
 
     # Completes a {Client#flush}.
     #
-    # @return [void]
+    # @return [void] nothing
     def on_pong = @handlers[:pong]&.call
 
     # Ignored: tether turns off verbose mode, so the server sends these only if
     # a caller asked for them explicitly.
     #
-    # @return [void]
+    # @return [void] nothing
     def on_ok = nil
 
     # Arrives once at connect and again whenever cluster topology changes.
     #
-    # @return [void]
+    # @return [void] nothing
     def on_info(json) = @handlers[:info]&.call(json)
 
     # An `-ERR` line, which may or may not be followed by the server closing
     # the connection. See {ServerError.fatal?}.
     #
-    # @return [void]
+    # @return [void] nothing
     def on_error(description) = @handlers[:error]&.call(description)
 
     # The parser gave up on the stream; the connection is no longer usable.
     #
-    # @return [void]
+    # @return [void] nothing
     def on_protocol_error(message) = @handlers[:protocol_error]&.call(message)
   end
 end

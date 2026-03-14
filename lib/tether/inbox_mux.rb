@@ -15,7 +15,7 @@ module Tether
 
     # Builds the mux without subscribing; {#start} runs on the first request.
     #
-    # @param client [Client]
+    # @param client [Client] the connection to publish on and subscribe through
     # @param prefix [String, nil] defaults to a fresh `_INBOX.<nuid>`
     # @param max_pending [Integer] queue depth for the shared inbox subscription
     def initialize(client, prefix: nil, max_pending: Subscription::DEFAULT_MAX_PENDING)
@@ -29,11 +29,11 @@ module Tether
 
     # Publishes a request and waits for the first reply.
     #
-    # @param subject [String]
-    # @param payload [String, nil]
-    # @param deadline [Deadline]
-    # @param headers [Headers, nil]
-    # @return [Msg]
+    # @param subject [String] the subject to send the request to
+    # @param payload [String, nil] the request body
+    # @param deadline [Deadline] how long to wait for the first reply
+    # @param headers [Headers, nil] headers to send with the request
+    # @return [Msg] the first reply to arrive
     # @raise [NoRespondersError] if the server reports nobody is subscribed
     # @raise [TimeoutError] if the deadline passes first
     def request(subject, payload = nil, deadline: Deadline.infinite, headers: nil)
@@ -50,7 +50,7 @@ module Tether
 
     # Subscribes the shared inbox, once.
     #
-    # @return [Subscription]
+    # @return [Subscription] the shared inbox subscription
     def start
       @lock.synchronize do
         return @subscription if @subscription
@@ -78,7 +78,7 @@ module Tether
     # Releases every waiting request, so callers blocked in {#request} raise
     # rather than waiting out their deadlines.
     #
-    # @return [void]
+    # @return [void] nothing
     def close
       waiters = @lock.synchronize { @pending.values.tap { @pending.clear } }
       waiters.each(&:close)

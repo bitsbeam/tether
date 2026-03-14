@@ -6,7 +6,7 @@ module Tether
   # Headers are parsed on first use, on whichever thread touches them, so the
   # reader thread never pays for a header block it may not need.
   class Msg
-    # @return [String]
+    # @return [String] the subject this was delivered on, not the pattern subscribed to
     attr_reader :subject
 
     # @return [String] the payload, always binary
@@ -15,17 +15,17 @@ module Tether
     # @return [String, nil] the subject a reply should be published to
     attr_reader :reply_to
 
-    # @return [Subscription, nil]
+    # @return [Subscription, nil] the subscription that received it, absent for a synthesised message
     attr_reader :subscription
 
     # Built by the dispatcher on the reader thread, so it does no work beyond
     # holding references.
     #
-    # @param subject [String]
-    # @param data [String]
-    # @param reply_to [String, nil]
+    # @param subject [String] the subject the message was delivered on
+    # @param data [String] the payload
+    # @param reply_to [String, nil] the subject a reply should be published to
     # @param header_bytes [String, nil] the unparsed header block
-    # @param subscription [Subscription, nil]
+    # @param subscription [Subscription, nil] the subscription that received it
     def initialize(subject:, data:, reply_to: nil, header_bytes: nil, subscription: nil)
       @subject = subject
       @data = data
@@ -61,9 +61,9 @@ module Tether
 
     # Publishes back to this message's reply subject.
     #
-    # @param payload [String, nil]
-    # @param headers [Headers, nil]
-    # @return [void]
+    # @param payload [String, nil] the reply body
+    # @param headers [Headers, nil] headers to send with the reply
+    # @return [void] nothing
     # @raise [Error] if the message carries no reply subject
     def respond(payload = nil, headers: nil)
       raise Error, "message on #{@subject} has no reply subject" unless @reply_to

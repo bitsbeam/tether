@@ -18,22 +18,22 @@ module Tether
     # Builds a deadline that expires after a duration from now.
     #
     # @param seconds [Numeric, nil] duration in seconds, or nil for a deadline that never expires
-    # @return [Deadline]
+    # @return [Deadline] a deadline that expires after the given duration
     def self.after(seconds)
       new(seconds.nil? ? nil : now + seconds)
     end
 
     # Builds a deadline that never expires.
     #
-    # @return [Deadline]
+    # @return [Deadline] a deadline that never expires
     def self.infinite
       new(nil)
     end
 
     # Accepts whatever a caller passed for a timeout and returns a Deadline.
     #
-    # @param value [Deadline, Numeric, nil]
-    # @return [Deadline]
+    # @param value [Deadline, Numeric, nil] a deadline, a number of seconds, or nil for no limit
+    # @return [Deadline] the value as a deadline
     def self.coerce(value)
       return value if value.is_a?(self)
 
@@ -70,7 +70,7 @@ module Tether
     # Returns nil for an infinite deadline, which is what every blocking
     # primitive in Ruby already interprets as "wait forever".
     #
-    # @return [Float, nil]
+    # @return [Float, nil] seconds left, or nil when this deadline never expires
     def remaining
       return nil if infinite?
 
@@ -88,8 +88,8 @@ module Tether
     # Raises if this deadline has already expired.
     #
     # @param subject [String, nil] included in the error message for context
-    # @raise [TimeoutError]
-    # @return [void]
+    # @raise [TimeoutError] if the deadline has already passed
+    # @return [void] nothing when time remains
     def check!(subject = nil)
       return unless expired?
 
@@ -98,7 +98,7 @@ module Tether
 
     # Narrows this deadline, never widens it.
     #
-    # @param seconds [Numeric, nil]
+    # @param seconds [Numeric, nil] the duration to narrow to; nil leaves the deadline alone
     # @return [Deadline] the earlier of this deadline and now + seconds
     def with_at_most(seconds)
       return self if seconds.nil?
@@ -109,8 +109,8 @@ module Tether
 
     # Returns the earlier of two deadlines.
     #
-    # @param other [Deadline]
-    # @return [Deadline]
+    # @param other [Deadline] the deadline to compare against
+    # @return [Deadline] whichever of the two expires first
     def earliest(other)
       return other if infinite?
       return self if other.infinite?

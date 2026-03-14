@@ -27,7 +27,7 @@ module Tether
     #
     # Connects, and when a block is given yields the client and closes it after.
     #
-    # @param uri [String, nil]
+    # @param uri [String, nil] the server to reach; defaults to NATS_URL, then nats://127.0.0.1:4222
     # @param options [Hash{Symbol => Object}] CONNECT overrides, plus :connect_timeout and :max_pending
     # @return [Client, Object] the client, or the block's value
     # @raise [ConnectionError] if the server cannot be reached
@@ -46,8 +46,8 @@ module Tether
     # Builds a client without opening a socket. Call {#connect}, or use
     # {.connect} to do both.
     #
-    # @param uri [String, nil]
-    # @param options [Hash{Symbol => Object}]
+    # @param uri [String, nil] the server to reach; defaults to NATS_URL, then nats://127.0.0.1:4222
+    # @param options [Hash{Symbol => Object}] CONNECT fields to override, plus :connect_timeout and :max_pending
     def initialize(uri = nil, **options)
       @uri = uri || ENV.fetch("NATS_URL", DEFAULT_URI)
       @options = options
@@ -62,8 +62,8 @@ module Tether
 
     # Opens the socket, exchanges INFO and CONNECT, and starts the reader.
     #
-    # @param timeout [Numeric, nil]
-    # @return [self]
+    # @param timeout [Numeric, nil] seconds allowed for the socket, the handshake, and the first flush
+    # @return [self] this client, connected
     def connect(timeout: @options.fetch(:connect_timeout, DEFAULT_CONNECT_TIMEOUT))
       deadline = Deadline.after(timeout)
       @transport = Transport.connect(@uri, deadline: deadline)
@@ -81,11 +81,11 @@ module Tether
     # return means the frame reached the socket, not that the server processed
     # it. Follow with {#flush} when you need that guarantee.
     #
-    # @param subject [String]
-    # @param payload [String, nil]
-    # @param reply_to [String, nil]
-    # @param headers [Headers, nil]
-    # @return [void]
+    # @param subject [String] the subject to publish to
+    # @param payload [String, nil] the message body; nil sends an empty payload
+    # @param reply_to [String, nil] a subject a responder should send its answer to
+    # @param headers [Headers, nil] headers to send alongside the payload
+    # @return [void] nothing; the server does not acknowledge a publish
     # @raise [MaxPayloadError] if the frame exceeds what the server advertised
     def publish(subject, payload = nil, reply_to: nil, headers: nil)
       ensure_connected!
@@ -101,10 +101,11 @@ module Tether
 
     # Subscribes, delivering to the block on a worker thread when one is given.
     #
-    # @param subject [String]
-    # @param queue [String, nil] queue group
-    # @param max_pending [Integer]
-    # @return [Subscription]
+    # @param subject [String] the subject or wildcard pattern to receive on
+    # @param queue [String, nil] a queue group to join, so the server gives each
+    #   message to only one member
+    # @param max_pending [Integer] how many messages may queue before this counts as a slow consumer
+    # @return [Subscription] the subscription, which the caller keeps in order to cancel it
     def subscribe(subject, queue: nil, max_pending: Subscription::DEFAULT_MAX_PENDING, &callback)
       ensure_connected!
       subscription = Subscription.new(
@@ -122,9 +123,9 @@ module Tether
     # have arrived, so the subscription stays registered and its worker keeps
     # running until then.
     #
-    # @param subscription [Subscription]
+    # @param subscription [Subscription] the subscription to cancel
     # @param max_msgs [Integer, nil] unsubscribe only after this many more messages
-    # @return [void]
+    # @return [void] nothing
     def unsubscribe(subscription, max_msgs = nil)
       @transport.write(Protocol::Encoder.unsub(subscription.sid, max_msgs)) unless @transport.closed?
       return if max_msgs
@@ -139,11 +140,11 @@ module Tether
     # Every request on a connection shares one inbox subscription; replies are
     # demultiplexed in memory, so N concurrent requests cost one subscription.
     #
-    # @param subject [String]
-    # @param payload [String, nil]
-    # @param timeout [Numeric, nil]
-    # @param headers [Headers, nil]
-    # @return [Msg]
+    # @param subject [String] the subject to send the request to
+    # @param payload [String, nil] the request body
+    # @param timeout [Numeric, nil] seconds to wait for the first reply
+    # @param headers [Headers, nil] headers to send with the request
+    # @return [Msg] the first reply to arrive
     # @raise [NoRespondersError] if nobody is subscribed to the subject
     # @raise [TimeoutError] if no reply arrives in time
     def request(subject, payload = nil, timeout: DEFAULT_REQUEST_TIMEOUT, headers: nil)
@@ -162,9 +163,9 @@ module Tether
     # Round trips a PING, which the server answers only after everything sent
     # before it has been processed.
     #
-    # @param timeout [Numeric, nil]
-    # @return [true]
-    # @raise [TimeoutError]
+    # @param timeout [Numeric, nil] seconds to wait for the server's PONG
+    # @return [true] always true; it raises rather than returning false
+    # @raise [TimeoutError] if the server does not answer in time
     def flush(timeout: DEFAULT_FLUSH_TIMEOUT)
       ensure_connected!
       @transport.write(Protocol::PING)
@@ -177,7 +178,7 @@ module Tether
     # exit on its own. Nothing is killed: a thread stopped mid-parse would
     # leave shared state in whatever shape the interrupt found it.
     #
-    # @return [void]
+    # @return [void] nothing
     def close
       return if @status == :closed
 
@@ -201,8 +202,8 @@ module Tether
     # Errors are never raised into a caller's thread: they are recorded and
     # passed here, on the reader thread.
     #
-    # @yieldparam error [Exception]
-    # @return [void]
+    # @yieldparam error [Exception] the error that arrived, on the reader thread
+    # @return [void] nothing
     def on_error(&handler)
       @error_handlers << handler
       nil

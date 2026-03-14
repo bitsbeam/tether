@@ -101,7 +101,7 @@ module Tether
       # Appends bytes and consumes every complete frame in the buffer.
       #
       # @param data [String] bytes as read from the socket
-      # @return [self]
+      # @return [self] this parser, so appends can be chained
       def <<(data)
         return self if @broken || data.nil? || data.empty?
 
@@ -113,7 +113,7 @@ module Tether
 
       # Discards buffered bytes and returns to the initial state.
       #
-      # @return [void]
+      # @return [void] nothing
       def reset!
         @buffer.clear
         @position = 0

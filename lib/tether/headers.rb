@@ -46,7 +46,7 @@ module Tether
     # blank line.
     #
     # @param bytes [String] the header section of an HMSG or HPUB frame
-    # @return [Headers]
+    # @return [Headers] the parsed headers, including any status on the version line
     # @raise [ProtocolError] if the version line is missing or malformed
     def self.parse(bytes)
       lines = bytes.to_s.split(CRLF, -1)
@@ -70,7 +70,7 @@ module Tether
     # neither on an ordinary message.
     #
     # @param version [String] the first line of a header block
-    # @return [Array(Integer, nil), Array(nil, nil)]
+    # @return [Array(Integer, nil), Array(nil, nil)] the status code and description, either of which may be nil
     def self.parse_version_line(version)
       remainder = version[VERSION.length..].to_s.strip
       return [nil, nil] if remainder.empty?
@@ -81,8 +81,8 @@ module Tether
 
     # Builds headers from a hash, so the common case needs no braces.
     #
-    # @param entries [Hash{String => String, Array<String>}]
-    # @return [Headers]
+    # @param entries [Hash{String => String, Array<String>}] the headers to start with
+    # @return [Headers] the headers
     def self.[](entries)
       new(entries: entries)
     end
@@ -90,8 +90,8 @@ module Tether
     # Builds a header set. Prefer {.[]} for the common case of a plain hash.
     #
     # @param entries [Hash{String => String, Array<String>}] initial headers
-    # @param status [Integer, nil]
-    # @param description [String, nil]
+    # @param status [Integer, nil] a status code to put on the version line
+    # @param description [String, nil] the text that follows the status code
     # @raise [ArgumentError] if a key is not a token or a value spans lines
     def initialize(entries: {}, status: nil, description: nil)
       @entries = {}
@@ -100,7 +100,7 @@ module Tether
       entries.each { |key, value| Array(value).each { |item| add(key.to_s, item.to_s) } }
     end
 
-    # @param key [String]
+    # @param key [String] the header name, matched exactly including case
     # @return [String, nil] the first value for the key
     def [](key)
       @entries[key]&.first
@@ -108,9 +108,9 @@ module Tether
 
     # Replaces every value for a key.
     #
-    # @param key [String]
-    # @param value [String]
-    # @return [String]
+    # @param key [String] the header name
+    # @param value [String] the value to store, which may not contain CR or LF
+    # @return [String] the value that was stored
     # @raise [ArgumentError] if the key is not a token or the value spans lines
     def []=(key, value)
       @entries[validate_key(key)] = [validate_value(value)]
@@ -123,9 +123,9 @@ module Tether
     # the first match, so a second value for a `Nats-` header is silently
     # ignored by the server rather than merged.
     #
-    # @param key [String]
-    # @param value [String]
-    # @return [self]
+    # @param key [String] the header name
+    # @param value [String] the value to append
+    # @return [self] these headers, so calls can be chained
     # @raise [ArgumentError] if the key is not a token or the value spans lines
     def add(key, value)
       (@entries[validate_key(key)] ||= []) << validate_value(value)
@@ -135,15 +135,15 @@ module Tether
     # Every value for a key. Note the server reads only the first: repeated
     # keys are legal on the wire but its lookups stop at the first match.
     #
-    # @param key [String]
-    # @return [Array<String>]
+    # @param key [String] the header name
+    # @return [Array<String>] every value stored under the key, in the order added
     def values(key)
       @entries.fetch(key, []).dup
     end
 
     # Removes a key and all of its values.
     #
-    # @param key [String]
+    # @param key [String] the header name to remove
     # @return [Array<String>, nil] the removed values
     def delete(key)
       @entries.delete(key)
@@ -151,8 +151,8 @@ module Tether
 
     # Matched exactly, including case.
     #
-    # @param key [String]
-    # @return [Boolean]
+    # @param key [String] the header name
+    # @return [Boolean] whether the key is present
     def key?(key)
       @entries.key?(key)
     end
@@ -160,9 +160,9 @@ module Tether
     # Yields each key once per value, so a repeated key is yielded repeatedly,
     # which is how it is written to the wire.
     #
-    # @yieldparam key [String]
-    # @yieldparam value [String]
-    # @return [Enumerator, self]
+    # @yieldparam key [String] the header name, repeated once per value it carries
+    # @yieldparam value [String] one of the values stored under that name
+    # @return [Enumerator, self] these headers, or an enumerator when no block is given
     def each(&block)
       return to_enum(:each) unless block
 
@@ -192,7 +192,7 @@ module Tether
 
     # Whether this is a JetStream control frame of either kind.
     #
-    # @return [Boolean]
+    # @return [Boolean] whether the server reported that nobody is listening
     def control?
       @status == CONTROL
     end
@@ -202,7 +202,7 @@ module Tether
     # publish to. Distinguished from flow control by description, not by code,
     # because both are status 100.
     #
-    # @return [Boolean]
+    # @return [Boolean] whether this is an idle heartbeat rather than flow control
     def idle_heartbeat?
       control? && @description.to_s.start_with?("Idle")
     end
@@ -210,7 +210,7 @@ module Tether
     # A flow control request carries a reply subject and the consumer stalls
     # until the client publishes to it.
     #
-    # @return [Boolean]
+    # @return [Boolean] whether the consumer must publish to the reply subject to resume
     def flow_control?
       control? && @description.to_s.start_with?("Flow")
     end

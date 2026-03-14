@@ -31,9 +31,9 @@ module Tether
       class << self
         # Encodes a `PUB` frame.
         #
-        # @param subject [String]
-        # @param payload [String, nil]
-        # @param reply_to [String, nil]
+        # @param subject [String] the subject to publish to
+        # @param payload [String, nil] the payload; nil encodes a zero length body
+        # @param reply_to [String, nil] the subject a responder should answer on
         # @return [String] binary encoded frame
         def pub(subject, payload = nil, reply_to = nil)
           body = binary(payload)
@@ -45,10 +45,10 @@ module Tether
 
         # Encodes an `HPUB` frame.
         #
-        # @param subject [String]
-        # @param payload [String, nil]
+        # @param subject [String] the subject to publish to
+        # @param payload [String, nil] the payload; nil encodes a zero length body
         # @param headers [Headers, String] headers, or a pre-encoded header block
-        # @param reply_to [String, nil]
+        # @param reply_to [String, nil] the subject a responder should answer on
         # @return [String] binary encoded frame
         def hpub(subject, payload, headers, reply_to = nil)
           block = headers.is_a?(Headers) ? headers.to_wire : binary(headers)
@@ -62,9 +62,10 @@ module Tether
 
         # Encodes a `SUB` frame.
         #
-        # @param subject [String]
-        # @param sid [Integer, String]
-        # @param queue [String, nil] queue group
+        # @param subject [String] the subject or pattern to receive on
+        # @param sid [Integer, String] the token the server will echo back on every message
+        # @param queue [String, nil] a queue group to join, so the server gives each
+        #   message to only one member
         # @return [String] binary encoded frame
         def sub(subject, sid, queue: nil)
           frame = buffer(subject.bytesize + 32)
@@ -75,7 +76,7 @@ module Tether
 
         # Encodes an `UNSUB` frame.
         #
-        # @param sid [Integer, String]
+        # @param sid [Integer, String] the token given at subscribe time
         # @param max_msgs [Integer, nil] unsubscribe after this many messages
         # @return [String] binary encoded frame
         def unsub(sid, max_msgs = nil)

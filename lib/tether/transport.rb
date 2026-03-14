@@ -18,9 +18,9 @@ module Tether
 
     # Opens a TCP connection.
     #
-    # @param uri [String, URI::Generic]
+    # @param uri [String, URI::Generic] the server to reach; a bare host:port is read as nats://
     # @param deadline [Deadline] bounds the connect and every later read
-    # @return [Transport]
+    # @return [Transport] an open transport
     # @raise [ConnectionError] if the server cannot be reached
     def self.connect(uri, deadline: Deadline.infinite)
       new(uri).tap { _1.open(deadline) }
@@ -37,9 +37,9 @@ module Tether
     # Opens the socket with TCP_NODELAY set, since the protocol is latency
     # sensitive and frames are already written whole.
     #
-    # @param deadline [Deadline]
-    # @return [self]
-    # @raise [ConnectionError]
+    # @param deadline [Deadline] how long to allow for the connection
+    # @return [self] this transport, now open
+    # @raise [ConnectionError] if the server cannot be reached
     def open(deadline = Deadline.infinite)
       @socket = Socket.tcp(@uri.host, @uri.port, connect_timeout: deadline.remaining)
       @socket.sync = true
@@ -51,7 +51,7 @@ module Tether
 
     # Reads whatever is available.
     #
-    # @param deadline [Deadline]
+    # @param deadline [Deadline] how long to wait for bytes to arrive
     # @return [String, nil] bytes, or nil at end of stream
     # @raise [TimeoutError] if the deadline passes with nothing readable
     def read(deadline = Deadline.infinite)
@@ -84,7 +84,7 @@ module Tether
 
     # Closes the socket, which also unblocks a read waiting on it.
     #
-    # @return [void]
+    # @return [void] nothing
     def close
       @lock.synchronize do
         @socket&.close

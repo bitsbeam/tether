@@ -12,10 +12,10 @@ module Tether
     # @return [String] the token sent to the server and echoed back on every message
     attr_reader :sid
 
-    # @return [String]
+    # @return [String] the token sent at subscribe time and echoed back on every message
     attr_reader :subject
 
-    # @return [String, nil]
+    # @return [String, nil] the queue group this belongs to, if any
     attr_reader :queue_group
 
     # @return [Integer] messages delivered to this subscription
@@ -30,9 +30,9 @@ module Tether
     # Starts a worker thread when a callback is given. Without one, messages
     # queue up until {#next_message} takes them on the caller's thread.
     #
-    # @param sid [String]
-    # @param subject [String]
-    # @param queue_group [String, nil]
+    # @param sid [String] the token the server will echo back on every message
+    # @param subject [String] the subject or pattern subscribed to
+    # @param queue_group [String, nil] the queue group to join, so the work is shared
     # @param max_pending [Integer] queue depth before this is a slow consumer
     # @param on_slow_consumer [Proc, nil] called with self when a message is dropped
     # @param responder [Client, nil] lets {Msg#respond} publish a reply
@@ -54,7 +54,7 @@ module Tether
 
     # Enqueues a message. Called on the reader thread, so it never blocks.
     #
-    # @param msg [Msg]
+    # @param msg [Msg] the message to hand to the worker
     # @return [Boolean] false when the message was dropped
     def deliver(msg)
       @queue.push(msg, true)
@@ -70,8 +70,8 @@ module Tether
 
     # Takes the next message, for a subscription with no callback.
     #
-    # @param deadline [Deadline]
-    # @return [Msg]
+    # @param deadline [Deadline] how long to wait for a message
+    # @return [Msg] the next message
     # @raise [TimeoutError] if the deadline passes first
     def next_message(deadline = Deadline.infinite)
       msg = @queue.pop(timeout: deadline.remaining)
@@ -96,7 +96,7 @@ module Tether
 
     # Stops delivery and lets the worker finish what it already took.
     #
-    # @return [void]
+    # @return [void] nothing
     def close
       @queue.close
       @worker&.join(1)

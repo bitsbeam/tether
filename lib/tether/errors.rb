@@ -75,7 +75,7 @@ module Tether
     # Builds the most specific {ServerError} subclass for an `-ERR` description.
     #
     # @param description [String] the text between the quotes of an `-ERR` line
-    # @return [ServerError]
+    # @return [ServerError] the most specific subclass that matches, or this class
     def self.for(description)
       normalized = description.to_s.downcase
       name = MAPPING[normalized] || MAPPING.find { |text, _| normalized.include?(text) }&.last
@@ -91,7 +91,7 @@ module Tether
     # closes it 20ms later. Reconnect must therefore be driven by the socket
     # reaching EOF; this predicate only says whether to expect that.
     #
-    # @return [Boolean]
+    # @return [Boolean] true, which subclasses the server does not close over override
     def self.fatal?
       true
     end
