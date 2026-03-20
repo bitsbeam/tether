@@ -40,7 +40,7 @@ RSpec.describe Tether::Client do
 
     it "round trips headers without disturbing the payload" do
       received = collector("with.headers")
-      nc.publish("with.headers", "body", headers: Tether::Headers["Nats-Msg-Id" => "m-1", "Nats-TTL" => "60"])
+      nc.publish("with.headers", "body", headers: Tether::Protocol::Headers["Nats-Msg-Id" => "m-1", "Nats-TTL" => "60"])
       msg = received.pop(timeout: 2)
 
       expect(msg.data).to eq("body")

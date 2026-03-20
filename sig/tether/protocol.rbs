@@ -8,7 +8,7 @@ module Tether
     DEFAULT_MAX_CONTROL_LINE: Integer
     BINARY: Encoding
 
-    # The contract {Parser} delivers frames to. Implemented by {Dispatcher}.
+    # The contract {Parser} delivers frames to. Implemented by {Protocol::Dispatcher}.
     interface _ParserSink
       def on_msg: (String subject, String sid, String? reply_to, String? headers, String payload) -> void
       def on_ping: () -> void

@@ -3,16 +3,20 @@
 require_relative "tether/version"
 require_relative "tether/errors"
 require_relative "tether/deadline"
-require_relative "tether/nuid"
-require_relative "tether/headers"
+
 require_relative "tether/protocol"
+require_relative "tether/protocol/headers"
+require_relative "tether/protocol/msg"
 require_relative "tether/protocol/encoder"
 require_relative "tether/protocol/parser"
-require_relative "tether/msg"
-require_relative "tether/transport"
-require_relative "tether/subscription"
-require_relative "tether/dispatcher"
-require_relative "tether/inbox_mux"
+require_relative "tether/protocol/dispatcher"
+
+require_relative "tether/connection"
+require_relative "tether/connection/nuid"
+require_relative "tether/connection/transport"
+require_relative "tether/connection/subscription"
+require_relative "tether/connection/inbox_mux"
+
 require_relative "tether/client"
 
 # A NATS client for Ruby.

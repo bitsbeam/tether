@@ -1,0 +1,21 @@
+module Tether
+  module Protocol
+    class Msg
+      attr_reader subject: String
+      attr_reader data: String
+      attr_reader reply_to: String?
+      attr_reader subscription: Connection::Subscription?
+
+      @header_bytes: String?
+      @headers: Headers?
+
+      def initialize: (subject: String, data: String, ?reply_to: String?, ?header_bytes: String?, ?subscription: Connection::Subscription?) -> void
+      def headers: () -> Headers?
+      def status: () -> Integer?
+      def no_responders?: () -> bool
+      def respond: (?String? payload, ?headers: Headers?) -> void
+      def empty?: () -> bool
+      def inspect: () -> String
+    end
+  end
+end

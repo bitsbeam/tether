@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-RSpec.describe Tether::Headers do
+RSpec.describe Tether::Protocol::Headers do
   describe ".parse" do
     it "reads a plain header block" do
       headers = described_class.parse("NATS/1.0\r\nNats-Msg-Id: abc-1\r\nNats-Expected-Last-Sequence: 42\r\n\r\n")

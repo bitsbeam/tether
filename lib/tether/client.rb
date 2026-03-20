@@ -66,7 +66,7 @@ module Tether
     # @return [self] this client, connected
     def connect(timeout: @options.fetch(:connect_timeout, DEFAULT_CONNECT_TIMEOUT))
       deadline = Deadline.after(timeout)
-      @transport = Transport.connect(@uri, deadline: deadline)
+      @transport = Connection::Transport.connect(@uri, deadline: deadline)
       read_server_info(deadline)
       @transport.write(Protocol::Encoder.connect(connect_options))
       @status = :connected
@@ -84,7 +84,7 @@ module Tether
     # @param subject [String] the subject to publish to
     # @param payload [String, nil] the message body; nil sends an empty payload
     # @param reply_to [String, nil] a subject a responder should send its answer to
-    # @param headers [Headers, nil] headers to send alongside the payload
+    # @param headers [Protocol::Headers, nil] headers to send alongside the payload
     # @return [void] nothing; the server does not acknowledge a publish
     # @raise [MaxPayloadError] if the frame exceeds what the server advertised
     def publish(subject, payload = nil, reply_to: nil, headers: nil)
@@ -105,10 +105,10 @@ module Tether
     # @param queue [String, nil] a queue group to join, so the server gives each
     #   message to only one member
     # @param max_pending [Integer] how many messages may queue before this counts as a slow consumer
-    # @return [Subscription] the subscription, which the caller keeps in order to cancel it
-    def subscribe(subject, queue: nil, max_pending: Subscription::DEFAULT_MAX_PENDING, &callback)
+    # @return [Connection::Subscription] the subscription, which the caller keeps in order to cancel it
+    def subscribe(subject, queue: nil, max_pending: Connection::Subscription::DEFAULT_MAX_PENDING, &callback)
       ensure_connected!
-      subscription = Subscription.new(
+      subscription = Connection::Subscription.new(
         sid: next_sid, subject: subject, queue_group: queue, max_pending: max_pending,
         on_slow_consumer: method(:report_slow_consumer), responder: self, &callback
       )
@@ -123,7 +123,7 @@ module Tether
     # have arrived, so the subscription stays registered and its worker keeps
     # running until then.
     #
-    # @param subscription [Subscription] the subscription to cancel
+    # @param subscription [Connection::Subscription] the subscription to cancel
     # @param max_msgs [Integer, nil] unsubscribe only after this many more messages
     # @return [void] nothing
     def unsubscribe(subscription, max_msgs = nil)
@@ -143,8 +143,8 @@ module Tether
     # @param subject [String] the subject to send the request to
     # @param payload [String, nil] the request body
     # @param timeout [Numeric, nil] seconds to wait for the first reply
-    # @param headers [Headers, nil] headers to send with the request
-    # @return [Msg] the first reply to arrive
+    # @param headers [Protocol::Headers, nil] headers to send with the request
+    # @return [Protocol::Msg] the first reply to arrive
     # @raise [NoRespondersError] if nobody is subscribed to the subject
     # @raise [TimeoutError] if no reply arrives in time
     def request(subject, payload = nil, timeout: DEFAULT_REQUEST_TIMEOUT, headers: nil)
@@ -157,7 +157,7 @@ module Tether
     #
     # @return [String] a fresh inbox subject, unrelated to the shared request inbox
     def new_inbox
-      "#{InboxMux::INBOX_PREFIX}.#{NUID.next}"
+      "#{Connection::InboxMux::INBOX_PREFIX}.#{Connection::NUID.next}"
     end
 
     # Round trips a PING, which the server answers only after everything sent
@@ -224,11 +224,15 @@ module Tether
     private
 
     def inbox_mux
-      @lock.synchronize { @inbox_mux ||= InboxMux.new(self, max_pending: @options.fetch(:max_pending, Subscription::DEFAULT_MAX_PENDING)) }
+      @lock.synchronize do
+        @inbox_mux ||= Connection::InboxMux.new(
+          self, max_pending: @options.fetch(:max_pending, Connection::Subscription::DEFAULT_MAX_PENDING)
+        )
+      end
     end
 
     def build_dispatcher
-      Dispatcher.new(
+      Protocol::Dispatcher.new(
         ping: -> { @transport.write(Protocol::PONG) },
         pong: -> { @pongs.push(true) unless @pongs.closed? },
         info: ->(json) { @server_info = JSON.parse(json) },

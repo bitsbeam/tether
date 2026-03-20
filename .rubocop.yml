@@ -12,7 +12,7 @@ Metrics/BlockLength:
 Metrics/ClassLength:
   Exclude:
     - "lib/tether/protocol/parser.rb"
-    - "lib/tether/headers.rb"
+    - "lib/tether/protocol/headers.rb"
     - "lib/tether/client.rb"
 
 Metrics/AbcSize:

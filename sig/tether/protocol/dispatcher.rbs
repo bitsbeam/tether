@@ -1,0 +1,25 @@
+module Tether
+  module Protocol
+    class Dispatcher
+      @handlers: Hash[Symbol, ^(*untyped) -> void]
+      @subscriptions: Hash[String, Connection::Subscription]
+      @lock: Thread::Mutex
+
+      def initialize: (**^(*untyped) -> void handlers) -> void
+      def add: (Connection::Subscription subscription) -> Connection::Subscription
+      def remove: (String sid) -> Connection::Subscription?
+      def []: (String sid) -> Connection::Subscription?
+      def subscriptions: () -> Array[Connection::Subscription]
+      def size: () -> Integer
+      def clear: () -> void
+
+      def on_msg: (String subject, String sid, String? reply_to, String? header_bytes, String payload) -> void
+      def on_ping: () -> void
+      def on_pong: () -> void
+      def on_ok: () -> void
+      def on_info: (String json) -> void
+      def on_error: (String description) -> void
+      def on_protocol_error: (String message) -> void
+    end
+  end
+end

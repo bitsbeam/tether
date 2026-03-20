@@ -1,0 +1,4 @@
+module Tether
+  module Connection
+  end
+end

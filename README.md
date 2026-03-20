@@ -92,7 +92,7 @@ Header names are case sensitive and are sent exactly as given — the server mat
 `Nats-TTL` byte for byte, so nothing is canonicalized.
 
 ```ruby
-headers = Tether::Headers["Nats-Msg-Id" => "order-1", "Nats-TTL" => "60"]
+headers = Tether::Protocol::Headers["Nats-Msg-Id" => "order-1", "Nats-TTL" => "60"]
 nc.publish("orders.created", payload, headers: headers)
 
 nc.subscribe("orders.created") do |msg|

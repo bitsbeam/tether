@@ -20,11 +20,11 @@ RSpec.describe "request and reply" do
 
   it "carries headers in both directions" do
     nc.subscribe("echo.headers") do |msg|
-      msg.respond(msg.data, headers: Tether::Headers["X-Seen" => msg.headers["X-Sent"]])
+      msg.respond(msg.data, headers: Tether::Protocol::Headers["X-Seen" => msg.headers["X-Sent"]])
     end
     nc.flush
 
-    reply = nc.request("echo.headers", "body", headers: Tether::Headers["X-Sent" => "abc"])
+    reply = nc.request("echo.headers", "body", headers: Tether::Protocol::Headers["X-Sent" => "abc"])
 
     expect(reply.headers["X-Seen"]).to eq("abc")
   end

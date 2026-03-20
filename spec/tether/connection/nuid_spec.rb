@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-RSpec.describe Tether::NUID do
+RSpec.describe Tether::Connection::NUID do
   it "is a module with no instances to share or mis-share" do
     expect(described_class).to be_an_instance_of(Module)
     expect(described_class).not_to respond_to(:new)

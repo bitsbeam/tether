@@ -35,13 +35,13 @@ RSpec.describe Tether::Protocol::Encoder do
 
   describe ".hpub" do
     it "encodes the header size and the total size" do
-      frame = described_class.hpub("foo", "bar", Tether::Headers["Nats-Msg-Id" => "1"])
+      frame = described_class.hpub("foo", "bar", Tether::Protocol::Headers["Nats-Msg-Id" => "1"])
 
       expect(frame).to eq("HPUB foo 28 31\r\nNATS/1.0\r\nNats-Msg-Id: 1\r\n\r\nbar\r\n")
     end
 
     it "encodes a reply subject" do
-      frame = described_class.hpub("foo", "", Tether::Headers.new, "_INBOX.r")
+      frame = described_class.hpub("foo", "", Tether::Protocol::Headers.new, "_INBOX.r")
 
       expect(frame).to eq("HPUB foo _INBOX.r 12 12\r\nNATS/1.0\r\n\r\n\r\n")
     end
@@ -113,7 +113,7 @@ RSpec.describe Tether::Protocol::Encoder do
 
     it "keeps SUB and HPUB binary too" do
       expect(described_class.sub("täst", 1).encoding).to eq(Encoding::BINARY)
-      expect(described_class.hpub("täst", "\x80".b, Tether::Headers["K" => "v"]).encoding).to eq(Encoding::BINARY)
+      expect(described_class.hpub("täst", "\x80".b, Tether::Protocol::Headers["K" => "v"]).encoding).to eq(Encoding::BINARY)
     end
   end
 end
