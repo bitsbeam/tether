@@ -149,15 +149,15 @@ module Tether
     # @raise [TimeoutError] if no reply arrives in time
     def request(subject, payload = nil, timeout: DEFAULT_REQUEST_TIMEOUT, headers: nil)
       ensure_connected!
-      inbox_mux.request(subject, payload, deadline: Deadline.after(timeout), headers: headers)
+      inbox.request(subject, payload, deadline: Deadline.after(timeout), headers: headers)
     end
 
     # Builds a reply subject for a subscribe-then-publish exchange, which is
     # what you want when a single request may draw several replies.
     #
     # @return [String] a fresh inbox subject, unrelated to the shared request inbox
-    def new_inbox
-      "#{Connection::InboxMux::INBOX_PREFIX}.#{Connection::NUID.next}"
+    def build_inbox_subject
+      "#{Connection::Inbox::INBOX_PREFIX}.#{Connection::NUID.next}"
     end
 
     # Round trips a PING, which the server answers only after everything sent
@@ -183,7 +183,7 @@ module Tether
       return if @status == :closed
 
       @status = :closed
-      @inbox_mux&.close
+      @inbox&.close
       @transport&.close
       @reader.join(1) if @reader && @reader != Thread.current
       @dispatcher.clear
@@ -223,9 +223,9 @@ module Tether
 
     private
 
-    def inbox_mux
+    def inbox
       @lock.synchronize do
-        @inbox_mux ||= Connection::InboxMux.new(
+        @inbox ||= Connection::Inbox.new(
           self, max_pending: @options.fetch(:max_pending, Connection::Subscription::DEFAULT_MAX_PENDING)
         )
       end

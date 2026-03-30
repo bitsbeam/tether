@@ -8,7 +8,7 @@ module Tether
     # the server before the payload even goes out. Instead one subscription on
     # `_INBOX.<nuid>.*` covers the whole connection and replies are demultiplexed
     # in memory by the last subject token.
-    class InboxMux
+    class Inbox
       INBOX_PREFIX = "_INBOX"
 
       # @return [String] the subject prefix this connection's replies arrive on

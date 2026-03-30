@@ -21,7 +21,7 @@ module Tether
     @parser: Protocol::Parser
     @transport: Connection::Transport?
     @reader: Thread?
-    @inbox_mux: Connection::InboxMux?
+    @inbox: Connection::Inbox?
 
     def self.connect: (?String? uri, **untyped options) ?{ (Client) -> untyped } -> untyped
 
@@ -31,7 +31,7 @@ module Tether
     def subscribe: (String subject, ?queue: String?, ?max_pending: Integer) ?{ (Protocol::Msg) -> void } -> Connection::Subscription
     def unsubscribe: (Connection::Subscription subscription, ?Integer? max_msgs) -> void
     def request: (String subject, ?String? payload, ?timeout: Numeric?, ?headers: Protocol::Headers?) -> Protocol::Msg
-    def new_inbox: () -> String
+    def build_inbox_subject: () -> String
     def flush: (?timeout: Numeric?) -> bool
     def close: () -> void
     def connected?: () -> bool
@@ -42,7 +42,7 @@ module Tether
 
     private
 
-    def inbox_mux: () -> Connection::InboxMux
+    def inbox: () -> Connection::Inbox
     def build_dispatcher: () -> Protocol::Dispatcher
     def read_server_info: (Deadline deadline) -> void
     def connect_options: () -> Hash[Symbol, untyped]

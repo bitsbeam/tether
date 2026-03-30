@@ -37,7 +37,7 @@ before it — the way to know a subscription is live before publishing to it.
 
 ```ruby
 nc.publish("orders.created", payload)
-nc.publish("orders.created", payload, reply_to: nc.new_inbox)
+nc.publish("orders.created", payload, reply_to: nc.build_inbox_subject)
 
 subscription = nc.subscribe("orders.*") { |msg| handle(msg) }
 nc.unsubscribe(subscription)

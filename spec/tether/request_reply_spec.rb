@@ -86,7 +86,7 @@ RSpec.describe "request and reply" do
       nil
     end
 
-    expect(nc.send(:inbox_mux).pending).to eq(0)
+    expect(nc.send(:inbox).pending).to eq(0)
   end
 
   describe "reply subjects" do
@@ -108,8 +108,8 @@ RSpec.describe "request and reply" do
     end
 
     it "builds a fresh inbox on demand for subscribe-then-publish patterns" do
-      expect(nc.new_inbox).to start_with("_INBOX.")
-      expect(nc.new_inbox).not_to eq(nc.new_inbox)
+      expect(nc.build_inbox_subject).to start_with("_INBOX.")
+      expect(nc.build_inbox_subject).not_to eq(nc.build_inbox_subject)
     end
   end
 

@@ -15,7 +15,7 @@ require_relative "tether/connection"
 require_relative "tether/connection/nuid"
 require_relative "tether/connection/transport"
 require_relative "tether/connection/subscription"
-require_relative "tether/connection/inbox_mux"
+require_relative "tether/connection/inbox"
 
 require_relative "tether/client"
 

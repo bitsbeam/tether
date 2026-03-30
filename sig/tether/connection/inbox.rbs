@@ -1,6 +1,6 @@
 module Tether
   module Connection
-    class InboxMux
+    class Inbox
       INBOX_PREFIX: String
 
       attr_reader prefix: String
