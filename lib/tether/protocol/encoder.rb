@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "tether/version"
 
 module Tether
   module Protocol

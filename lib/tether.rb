@@ -1,23 +1,11 @@
 # frozen_string_literal: true
 
-require_relative "tether/version"
-require_relative "tether/errors"
-require_relative "tether/deadline"
-
-require_relative "tether/protocol"
-require_relative "tether/protocol/headers"
-require_relative "tether/protocol/msg"
-require_relative "tether/protocol/encoder"
-require_relative "tether/protocol/parser"
-require_relative "tether/protocol/dispatcher"
-
-require_relative "tether/connection"
-require_relative "tether/connection/nuid"
-require_relative "tether/connection/transport"
-require_relative "tether/connection/subscription"
-require_relative "tether/connection/inbox"
-
-require_relative "tether/client"
+require "tether/version"
+require "tether/errors"
+require "tether/deadline"
+require "tether/protocol"
+require "tether/connection"
+require "tether/client"
 
 # A NATS client for Ruby.
 module Tether
