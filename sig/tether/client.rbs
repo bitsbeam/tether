@@ -17,8 +17,8 @@ module Tether
     @lock: Thread::Mutex
     @pongs: Thread::Queue
     @error_handlers: Array[^(Exception) -> void]
-    @dispatcher: Protocol::Dispatcher
-    @parser: Protocol::Parser
+    @dispatcher: Protocol::Dispatcher?
+    @parser: Protocol::Parser?
     @transport: Connection::Transport?
     @reader: Thread?
     @inbox: Connection::Inbox?
@@ -43,7 +43,8 @@ module Tether
     private
 
     def inbox: () -> Connection::Inbox
-    def build_dispatcher: () -> Protocol::Dispatcher
+    def dispatcher: () -> Protocol::Dispatcher
+    def parser: () -> Protocol::Parser
     def read_server_info: (Deadline deadline) -> void
     def connect_options: () -> Hash[Symbol, untyped]
     def start_reader: () -> Thread

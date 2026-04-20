@@ -56,8 +56,6 @@ module Tether
       @lock = Mutex.new
       @pongs = Thread::Queue.new
       @error_handlers = []
-      @dispatcher = build_dispatcher
-      @parser = Protocol::Parser.new(@dispatcher)
     end
 
     # Opens the socket, exchanges INFO and CONNECT, and starts the reader.
@@ -112,7 +110,7 @@ module Tether
         sid: next_sid, subject: subject, queue_group: queue, max_pending: max_pending,
         on_slow_consumer: method(:report_slow_consumer), responder: self, &callback
       )
-      @dispatcher.add(subscription)
+      dispatcher.add(subscription)
       @transport.write(Protocol::Encoder.sub(subject, subscription.sid, queue: queue))
       subscription
     end
@@ -130,7 +128,7 @@ module Tether
       @transport.write(Protocol::Encoder.unsub(subscription.sid, max_msgs)) unless @transport.closed?
       return if max_msgs
 
-      @dispatcher.remove(subscription.sid)
+      dispatcher.remove(subscription.sid)
       subscription.close
       nil
     end
@@ -186,7 +184,7 @@ module Tether
       @inbox&.close
       @transport&.close
       @reader.join(1) if @reader && @reader != Thread.current
-      @dispatcher.clear
+      dispatcher.clear
       @pongs.close
       nil
     end
@@ -213,7 +211,7 @@ module Tether
     # requests are in flight.
     #
     # @return [Integer] subscriptions currently registered, including the shared request inbox
-    def subscription_count = @dispatcher.size
+    def subscription_count = dispatcher.size
 
     # The ceiling the server advertised in INFO. {#publish} refuses anything
     # larger rather than letting the server close the connection over it.
@@ -231,8 +229,12 @@ module Tether
       end
     end
 
-    def build_dispatcher
-      Protocol::Dispatcher.new(
+    # The parser's sink, and the registry of live subscriptions. Built on first
+    # use, which happens on the connecting thread before the reader starts.
+    #
+    # @return [Protocol::Dispatcher] the dispatcher for this connection
+    def dispatcher
+      @dispatcher ||= Protocol::Dispatcher.new(
         ping: -> { @transport.write(Protocol::PONG) },
         pong: -> { @pongs.push(true) unless @pongs.closed? },
         info: ->(json) { @server_info = JSON.parse(json) },
@@ -241,9 +243,14 @@ module Tether
       )
     end
 
+    # @return [Protocol::Parser] the parser fed by the reader thread
+    def parser
+      @parser ||= Protocol::Parser.new(dispatcher)
+    end
+
     def read_server_info(deadline)
-      @parser << @transport.read(deadline) until @server_info
-      @parser.max_payload = @server_info["max_payload"]
+      parser << @transport.read(deadline) until @server_info
+      parser.max_payload = @server_info["max_payload"]
     end
 
     def connect_options
@@ -259,11 +266,11 @@ module Tether
     end
 
     def read_loop
-      until @transport.closed? || @parser.broken?
+      until @transport.closed? || parser.broken?
         data = @transport.read
         break if data.nil?
 
-        @parser << data
+        parser << data
       end
     rescue ConnectionClosedError, TimeoutError => e
       record_error(e) unless @status == :closed
