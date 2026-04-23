@@ -30,6 +30,22 @@ RSpec.describe Tether::Deadline do
     end
   end
 
+  describe ".coerce" do
+    it "passes a deadline through untouched" do
+      deadline = described_class.after(1)
+
+      expect(described_class.coerce(deadline)).to be(deadline)
+    end
+
+    it "reads a number of seconds" do
+      expect(described_class.coerce(7).remaining).to eq(7.0)
+    end
+
+    it "reads nil as infinite" do
+      expect(described_class.coerce(nil)).to be_infinite
+    end
+  end
+
   describe "#with_at_most" do
     it "narrows a deadline" do
       expect(described_class.after(10).with_at_most(2).remaining).to eq(2.0)
@@ -73,22 +89,6 @@ RSpec.describe Tether::Deadline do
 
       expect { deadline.check!("$JS.API.STREAM.INFO.orders") }
         .to raise_error(Tether::TimeoutError, /orders/)
-    end
-  end
-
-  describe ".coerce" do
-    it "passes a deadline through untouched" do
-      deadline = described_class.after(1)
-
-      expect(described_class.coerce(deadline)).to be(deadline)
-    end
-
-    it "reads a number of seconds" do
-      expect(described_class.coerce(7).remaining).to eq(7.0)
-    end
-
-    it "reads nil as infinite" do
-      expect(described_class.coerce(nil)).to be_infinite
     end
   end
 
