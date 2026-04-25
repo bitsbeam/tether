@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 
 RSpec.describe Tether::Protocol::Parser do
-  subject(:parser) { described_class.new(sink) }
+  subject(:parser) { described_class.new(dispatcher) }
 
-  let(:sink) { RecordingSink.new }
+  let(:dispatcher) { RecordingDispatcher.new }
 
   def feed(*chunks)
     chunks.each { parser << _1 }
-    sink.events
+    dispatcher.events
   end
 
   describe "control lines" do
@@ -64,7 +64,7 @@ RSpec.describe Tether::Protocol::Parser do
     it "yields binary payloads regardless of the encoding of the bytes fed in" do
       parser << "MSG foo 1 2\r\nhi\r\n"
 
-      expect(sink.events.first.last.encoding).to eq(Encoding::BINARY)
+      expect(dispatcher.events.first.last.encoding).to eq(Encoding::BINARY)
     end
 
     it "treats the sid as the opaque token the server echoes back, not a number" do
@@ -92,13 +92,13 @@ RSpec.describe Tether::Protocol::Parser do
       ].join.b
     end
 
-    let(:expected) { described_class.new(RecordingSink.new).then { |_| feed(stream) }.dup }
+    let(:expected) { described_class.new(RecordingDispatcher.new).then { |_| feed(stream) }.dup }
 
     it "produces the same events for every possible split point" do
       whole = expected
 
       (1...stream.bytesize).each do |cut|
-        fresh = RecordingSink.new
+        fresh = RecordingDispatcher.new
         split = described_class.new(fresh)
         split << stream.byteslice(0, cut)
         split << stream.byteslice(cut..)
@@ -110,7 +110,7 @@ RSpec.describe Tether::Protocol::Parser do
     it "produces the same events when fed one byte at a time" do
       whole = expected
 
-      fresh = RecordingSink.new
+      fresh = RecordingDispatcher.new
       slow = described_class.new(fresh)
       stream.each_byte { slow << _1.chr }
 
@@ -121,7 +121,7 @@ RSpec.describe Tether::Protocol::Parser do
     it "reports nothing until a frame is complete" do
       parser << "MSG foo 1 3\r\nba"
 
-      expect(sink.events).to be_empty
+      expect(dispatcher.events).to be_empty
       expect(parser.pending_bytes).to eq(2)
     end
 
@@ -135,52 +135,52 @@ RSpec.describe Tether::Protocol::Parser do
   describe "protocol violations" do
     it "reports an unknown operation instead of raising into the reader thread" do
       expect { feed("WAT\r\n") }.not_to raise_error
-      expect(sink.events).to eq([[:protocol_error, %(unknown protocol operation: "WAT")]])
+      expect(dispatcher.events).to eq([[:protocol_error, %(unknown protocol operation: "WAT")]])
     end
 
     it "reports a malformed message line" do
       feed("MSG foo\r\n")
 
-      expect(sink.events).to eq([[:protocol_error, %(malformed control line: "MSG foo")]])
+      expect(dispatcher.events).to eq([[:protocol_error, %(malformed control line: "MSG foo")]])
     end
 
     it "rejects a header size larger than the total size" do
       feed("HMSG foo 1 40 10\r\n")
 
-      expect(sink.events).to eq([[:protocol_error, "header size exceeds total size on foo"]])
+      expect(dispatcher.events).to eq([[:protocol_error, "header size exceeds total size on foo"]])
     end
 
     it "rejects a payload that is not terminated by CRLF" do
       feed("MSG foo 1 3\r\nbarX\r\n")
 
-      expect(sink.events).to eq([[:protocol_error, "payload not terminated by CRLF on foo"]])
+      expect(dispatcher.events).to eq([[:protocol_error, "payload not terminated by CRLF on foo"]])
     end
 
     it "stops consuming once broken so the client can tear the connection down" do
       feed("WAT\r\n", "MSG foo 1 3\r\nbar\r\n")
 
       expect(parser).to be_broken
-      expect(sink.events.size).to eq(1)
+      expect(dispatcher.events.size).to eq(1)
     end
 
     it "refuses a payload size the server itself would refuse to parse" do
       feed("MSG foo 1 9999999999\r\n")
 
-      expect(sink.events.first.first).to eq(:protocol_error)
+      expect(dispatcher.events.first.first).to eq(:protocol_error)
     end
 
     it "refuses a frame larger than the max_payload the server advertised" do
-      bounded = described_class.new(sink, max_payload: 1024)
+      bounded = described_class.new(dispatcher, max_payload: 1024)
       bounded << "MSG foo 1 2048\r\n"
 
-      expect(sink.events).to eq([[:protocol_error, "frame of 2048 bytes exceeds max_payload 1024 on foo"]])
+      expect(dispatcher.events).to eq([[:protocol_error, "frame of 2048 bytes exceeds max_payload 1024 on foo"]])
     end
 
     it "refuses a control line past the sanity bound" do
-      bounded = described_class.new(sink, max_control_line: 32)
+      bounded = described_class.new(dispatcher, max_control_line: 32)
       bounded << "INFO #{"x" * 64}"
 
-      expect(sink.events).to eq([[:protocol_error, "control line exceeds 32 bytes"]])
+      expect(dispatcher.events).to eq([[:protocol_error, "control line exceeds 32 bytes"]])
     end
 
     it "can be reset and reused after a violation" do
@@ -189,7 +189,7 @@ RSpec.describe Tether::Protocol::Parser do
       parser << "PING\r\n"
 
       expect(parser).not_to be_broken
-      expect(sink.events.last).to eq([:ping])
+      expect(dispatcher.events.last).to eq([:ping])
     end
   end
 end

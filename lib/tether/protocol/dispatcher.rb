@@ -4,7 +4,7 @@ module Tether
   module Protocol
     # Routes parsed frames to subscriptions and to connection level handlers.
     #
-    # This is the parser's sink. It knows nothing about sockets or reconnection,
+    # This is the parser's dispatcher. It knows nothing about sockets or reconnection,
     # so the parser stays testable without a client.
     class Dispatcher
       # Wires up the connection level events the parser will report.

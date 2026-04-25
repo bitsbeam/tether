@@ -229,7 +229,7 @@ module Tether
       end
     end
 
-    # The parser's sink, and the registry of live subscriptions. Built on first
+    # The parser's dispatcher, and the registry of live subscriptions. Built on first
     # use, which happens on the connecting thread before the reader starts.
     #
     # @return [Protocol::Dispatcher] the dispatcher for this connection

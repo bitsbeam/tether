@@ -9,7 +9,7 @@ module Tether
       attr_reader state: Symbol
       attr_accessor max_payload: Integer?
 
-      @sink: _ParserSink
+      @dispatcher: _Dispatcher
       @max_control_line: Integer
       @buffer: String
       @position: Integer
@@ -21,7 +21,7 @@ module Tether
       @needed: Integer?
       @header_size: Integer?
 
-      def initialize: (_ParserSink sink, ?max_control_line: Integer, ?max_payload: Integer?) -> void
+      def initialize: (_Dispatcher dispatcher, ?max_control_line: Integer, ?max_payload: Integer?) -> void
       def <<: (String? data) -> self
       alias parse <<
       def reset!: () -> void

@@ -9,7 +9,7 @@ module Tether
     BINARY: Encoding
 
     # The contract {Parser} delivers frames to. Implemented by {Protocol::Dispatcher}.
-    interface _ParserSink
+    interface _Dispatcher
       def on_msg: (String subject, String sid, String? reply_to, String? headers, String payload) -> void
       def on_ping: () -> void
       def on_pong: () -> void

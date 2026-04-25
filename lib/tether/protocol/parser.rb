@@ -13,9 +13,9 @@ module Tether
     # The parser never raises into its caller. The reader thread is the only
     # demultiplexer for the whole connection, so its death would stall every
     # subscription at once; malformed input is reported through
-    # `sink.on_protocol_error` and the parser marks itself {#broken?}.
+    # `dispatcher.on_protocol_error` and the parser marks itself {#broken?}.
     #
-    # The sink must respond to:
+    # The dispatcher must respond to:
     #
     # - `on_msg(subject, sid, reply_to, header_bytes, payload)` where `sid` is
     #   the opaque token this client chose at SUB time, echoed back verbatim,
@@ -86,12 +86,12 @@ module Tether
       # @return [Integer, nil] largest frame accepted, from the server's INFO
       attr_accessor :max_payload
 
-      # @param sink [Object] receives the parsed frames
+      # @param dispatcher [Object] receives the parsed frames
       # @param max_control_line [Integer] sanity bound on a single control line
       # @param max_payload [Integer, nil] reject a frame larger than the server
       #   advertised in INFO, rather than buffering toward it
-      def initialize(sink, max_control_line: DEFAULT_MAX_CONTROL_LINE, max_payload: nil)
-        @sink = sink
+      def initialize(dispatcher, max_control_line: DEFAULT_MAX_CONTROL_LINE, max_payload: nil)
+        @dispatcher = dispatcher
         @max_control_line = max_control_line
         @max_payload = max_payload
         @buffer = String.new(capacity: COMPACT_THRESHOLD, encoding: BINARY)
@@ -140,7 +140,7 @@ module Tether
 
       def run
         buffer = @buffer
-        sink = @sink
+        dispatcher = @dispatcher
         pos = @position
         size = buffer.bytesize
 
@@ -155,10 +155,10 @@ module Tether
             end
 
             if (header_size = @header_size)
-              sink.on_msg(@subject, @sid, @reply_to, buffer.byteslice(pos, header_size),
-                          buffer.byteslice(pos + header_size, needed - header_size))
+              dispatcher.on_msg(@subject, @sid, @reply_to, buffer.byteslice(pos, header_size),
+                                buffer.byteslice(pos + header_size, needed - header_size))
             else
-              sink.on_msg(@subject, @sid, @reply_to, nil, buffer.byteslice(pos, needed))
+              dispatcher.on_msg(@subject, @sid, @reply_to, nil, buffer.byteslice(pos, needed))
             end
             pos += needed + CRLF_SIZE
             @awaiting_payload = false
@@ -221,10 +221,10 @@ module Tether
             end
 
             if header_size
-              sink.on_msg(subject, sid, reply_to, buffer.byteslice(pos, header_size),
-                          buffer.byteslice(pos + header_size, needed - header_size))
+              dispatcher.on_msg(subject, sid, reply_to, buffer.byteslice(pos, header_size),
+                                buffer.byteslice(pos + header_size, needed - header_size))
             else
-              sink.on_msg(subject, sid, reply_to, nil, buffer.byteslice(pos, needed))
+              dispatcher.on_msg(subject, sid, reply_to, nil, buffer.byteslice(pos, needed))
             end
             pos += needed + CRLF_SIZE
             next
@@ -260,10 +260,10 @@ module Tether
 
       def dispatch_ping_pong(start, line_end)
         if verb?(start, line_end, "PING")
-          @sink.on_ping
+          @dispatcher.on_ping
           true
         elsif verb?(start, line_end, "PONG")
-          @sink.on_pong
+          @dispatcher.on_pong
           true
         else
           unknown_operation(start, line_end)
@@ -273,7 +273,7 @@ module Tether
       def dispatch_ok(start, line_end)
         return unknown_operation(start, line_end) unless verb?(start, line_end, "+OK")
 
-        @sink.on_ok
+        @dispatcher.on_ok
         true
       end
 
@@ -281,7 +281,7 @@ module Tether
         return unknown_operation(start, line_end) unless verb?(start, line_end, "-ERR")
 
         description = trimmed(start + 4, line_end)
-        @sink.on_error(description.delete_prefix("'").delete_suffix("'"))
+        @dispatcher.on_error(description.delete_prefix("'").delete_suffix("'"))
         true
       end
 
@@ -291,7 +291,7 @@ module Tether
         json = trimmed(start + 4, line_end)
         return fail_protocol!("malformed INFO: #{snippet(start, line_end)}") if json.empty?
 
-        @sink.on_info(json)
+        @dispatcher.on_info(json)
         true
       end
 
@@ -350,7 +350,7 @@ module Tether
 
       def fail_protocol!(message)
         @broken = true
-        @sink.on_protocol_error(message)
+        @dispatcher.on_protocol_error(message)
         false
       end
     end
