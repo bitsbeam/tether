@@ -98,18 +98,20 @@ module Tether
         reset!
       end
 
-      # Appends bytes and consumes every complete frame in the buffer.
+      # Takes bytes as they arrive and consumes every complete frame among them.
+      #
+      # Frames are handed to the dispatcher rather than returned: a read can
+      # carry several frames, part of one, or the tail of the last read's.
       #
       # @param data [String] bytes as read from the socket
-      # @return [self] this parser, so appends can be chained
-      def <<(data)
+      # @return [self] this parser
+      def feed(data)
         return self if @broken || data.nil? || data.empty?
 
         @buffer << (data.encoding == BINARY ? data : data.b)
         run
         self
       end
-      alias parse <<
 
       # Discards buffered bytes and returns to the initial state.
       #

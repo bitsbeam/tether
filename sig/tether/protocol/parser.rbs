@@ -22,8 +22,7 @@ module Tether
       @header_size: Integer?
 
       def initialize: (_Dispatcher dispatcher, ?max_control_line: Integer, ?max_payload: Integer?) -> void
-      def <<: (String? data) -> self
-      alias parse <<
+      def feed: (String? data) -> self
       def reset!: () -> void
       def broken?: () -> bool
       def pending_bytes: () -> Integer

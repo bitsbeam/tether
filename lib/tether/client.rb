@@ -249,7 +249,7 @@ module Tether
     end
 
     def read_server_info(deadline)
-      parser << @transport.read(deadline) until @server_info
+      parser.feed(@transport.read(deadline)) until @server_info
       parser.max_payload = @server_info["max_payload"]
     end
 
@@ -270,7 +270,7 @@ module Tether
         data = @transport.read
         break if data.nil?
 
-        parser << data
+        parser.feed(data)
       end
     rescue ConnectionClosedError, TimeoutError => e
       record_error(e) unless @status == :closed

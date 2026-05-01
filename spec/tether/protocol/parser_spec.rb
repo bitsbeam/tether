@@ -6,7 +6,7 @@ RSpec.describe Tether::Protocol::Parser do
   let(:dispatcher) { RecordingDispatcher.new }
 
   def feed(*chunks)
-    chunks.each { parser << _1 }
+    chunks.each { parser.feed(_1) }
     dispatcher.events
   end
 
@@ -62,7 +62,7 @@ RSpec.describe Tether::Protocol::Parser do
     end
 
     it "yields binary payloads regardless of the encoding of the bytes fed in" do
-      parser << "MSG foo 1 2\r\nhi\r\n"
+      parser.feed("MSG foo 1 2\r\nhi\r\n")
 
       expect(dispatcher.events.first.last.encoding).to eq(Encoding::BINARY)
     end
@@ -100,8 +100,8 @@ RSpec.describe Tether::Protocol::Parser do
       (1...stream.bytesize).each do |cut|
         fresh = RecordingDispatcher.new
         split = described_class.new(fresh)
-        split << stream.byteslice(0, cut)
-        split << stream.byteslice(cut..)
+        split.feed(stream.byteslice(0, cut))
+        split.feed(stream.byteslice(cut..))
 
         expect(fresh.events).to eq(whole), "mismatch when split at byte #{cut}"
       end
@@ -112,14 +112,14 @@ RSpec.describe Tether::Protocol::Parser do
 
       fresh = RecordingDispatcher.new
       slow = described_class.new(fresh)
-      stream.each_byte { slow << _1.chr }
+      stream.each_byte { slow.feed(_1.chr) }
 
       expect(fresh.events).to eq(whole)
       expect(slow.pending_bytes).to eq(0)
     end
 
     it "reports nothing until a frame is complete" do
-      parser << "MSG foo 1 3\r\nba"
+      parser.feed("MSG foo 1 3\r\nba")
 
       expect(dispatcher.events).to be_empty
       expect(parser.pending_bytes).to eq(2)
@@ -171,14 +171,14 @@ RSpec.describe Tether::Protocol::Parser do
 
     it "refuses a frame larger than the max_payload the server advertised" do
       bounded = described_class.new(dispatcher, max_payload: 1024)
-      bounded << "MSG foo 1 2048\r\n"
+      bounded.feed("MSG foo 1 2048\r\n")
 
       expect(dispatcher.events).to eq([[:protocol_error, "frame of 2048 bytes exceeds max_payload 1024 on foo"]])
     end
 
     it "refuses a control line past the sanity bound" do
       bounded = described_class.new(dispatcher, max_control_line: 32)
-      bounded << "INFO #{"x" * 64}"
+      bounded.feed("INFO #{"x" * 64}")
 
       expect(dispatcher.events).to eq([[:protocol_error, "control line exceeds 32 bytes"]])
     end
@@ -186,7 +186,7 @@ RSpec.describe Tether::Protocol::Parser do
     it "can be reset and reused after a violation" do
       feed("WAT\r\n")
       parser.reset!
-      parser << "PING\r\n"
+      parser.feed("PING\r\n")
 
       expect(parser).not_to be_broken
       expect(dispatcher.events.last).to eq([:ping])
