@@ -1,62 +1,51 @@
 # frozen_string_literal: true
 
+require "json"
+
 module Tether
   module Protocol
-    # Routes parsed frames to subscriptions and to connection level handlers.
+    # Everything the server has told this connection: its subscriptions, the
+    # INFO it announced, the PONGs it has answered with, and the errors it has
+    # reported.
     #
-    # This is the parser's dispatcher. It knows nothing about sockets or reconnection,
-    # so the parser stays testable without a client.
+    # The parser hands every frame here, on the reader thread, so each handler
+    # does as little as it can. A message is looked up and enqueued; nothing
+    # waits, and no user code runs.
     class Dispatcher
-      # Wires up the connection level events the parser will report.
+      # @return [Registry] the connection's subscriptions
+      attr_reader :registry
+
+      # @return [ErrorHolder] errors that arrived outside any call
+      attr_reader :errors
+
+      # @return [Hash, nil] the INFO the server last announced
+      attr_reader :server_info
+
+      # @param connection [Client] asked for its transport when a PING must be answered
+      # @param registry [Registry] the subscriptions to route messages to
+      # @param errors [ErrorHolder] where reported errors are collected
+      def initialize(connection, registry: Registry.new, errors: ErrorHolder.new)
+        @connection = connection
+        @registry = registry
+        @errors = errors
+        @pongs = Thread::Queue.new
+      end
+
+      # Waits for the server to answer a PING.
       #
-      # @param handlers [Hash{Symbol => Proc}] :ping, :pong, :info, :error, :protocol_error
-      def initialize(**handlers)
-        @handlers = handlers
-        @subscriptions = {}
-        @lock = Mutex.new
+      # @param deadline [Deadline] how long to wait
+      # @return [true, nil] nil if the deadline passed or the connection closed
+      def await_pong(deadline)
+        @pongs.pop(timeout: deadline.remaining)
       end
 
-      # Registers a subscription so messages carrying its sid reach it.
-      #
-      # @param subscription [Connection::Subscription] the subscription to route messages to
-      # @return [Connection::Subscription] the subscription that was registered
-      def add(subscription)
-        @lock.synchronize { @subscriptions[subscription.sid] = subscription }
-        subscription
-      end
-
-      # Stops routing to a subscription. Messages already in flight for it are
-      # dropped when they arrive.
-      #
-      # @param sid [String] the token the subscription was registered under
-      # @return [Connection::Subscription, nil] the subscription that was registered, if any
-      def remove(sid)
-        @lock.synchronize { @subscriptions.delete(sid) }
-      end
-
-      # Looks up a subscription by the token the server echoed back.
-      #
-      # @param sid [String] the token echoed back by the server
-      # @return [Connection::Subscription, nil] nil once the subscription has been removed
-      def [](sid)
-        @lock.synchronize { @subscriptions[sid] }
-      end
-
-      # @return [Array<Connection::Subscription>] a snapshot, safe to iterate while others subscribe
-      def subscriptions
-        @lock.synchronize { @subscriptions.values }
-      end
-
-      # @return [Integer] how many subscriptions are registered
-      def size
-        @lock.synchronize { @subscriptions.size }
-      end
-
-      # Closes every subscription and empties the registry.
+      # Releases anyone waiting on a PONG and closes every subscription.
       #
       # @return [void] nothing
-      def clear
-        @lock.synchronize { @subscriptions.values.tap { @subscriptions.clear } }.each(&:close)
+      def close
+        @pongs.close unless @pongs.closed?
+        @registry.clear
+        nil
       end
 
       # Routes a message to its subscription, on the reader thread.
@@ -66,7 +55,7 @@ module Tether
       #
       # @return [void] nothing
       def on_msg(subject, sid, reply_to, header_bytes, payload)
-        subscription = self[sid] or return
+        subscription = @registry[sid] or return
 
         subscription.deliver(
           Msg.new(subject: subject, data: payload, reply_to: reply_to,
@@ -75,37 +64,56 @@ module Tether
         nil
       end
 
-      # The connection must answer promptly or the server drops it as stale.
+      # Answered inline rather than queued behind pending writes: a late PONG
+      # is what gets a connection dropped as stale.
       #
       # @return [void] nothing
-      def on_ping = @handlers[:ping]&.call
+      def on_ping
+        @connection.transport&.write(Protocol::PONG)
+        nil
+      end
 
       # Completes a {Client#flush}.
       #
       # @return [void] nothing
-      def on_pong = @handlers[:pong]&.call
+      def on_pong
+        @pongs.push(true) unless @pongs.closed?
+        nil
+      end
 
-      # Ignored: tether turns off verbose mode, so the server sends these only if
-      # a caller asked for them explicitly.
+      # Ignored: tether turns off verbose mode, so the server sends these only
+      # if a caller asked for them explicitly.
       #
       # @return [void] nothing
       def on_ok = nil
 
       # Arrives once at connect and again whenever cluster topology changes.
       #
+      # @param json [String] the still unparsed INFO payload
       # @return [void] nothing
-      def on_info(json) = @handlers[:info]&.call(json)
+      def on_info(json)
+        @server_info = JSON.parse(json)
+        nil
+      end
 
       # An `-ERR` line, which may or may not be followed by the server closing
       # the connection. See {ServerError.fatal?}.
       #
+      # @param description [String] the text between the quotes
       # @return [void] nothing
-      def on_error(description) = @handlers[:error]&.call(description)
+      def on_error(description)
+        @errors.record(ServerError.for(description))
+        nil
+      end
 
       # The parser gave up on the stream; the connection is no longer usable.
       #
+      # @param message [String] what the parser refused to accept
       # @return [void] nothing
-      def on_protocol_error(message) = @handlers[:protocol_error]&.call(message)
+      def on_protocol_error(message)
+        @errors.record(ProtocolError.new(message))
+        nil
+      end
     end
   end
 end

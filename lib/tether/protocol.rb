@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "tether/protocol/headers"
+require "tether/protocol/registry"
 require "tether/protocol/msg"
 require "tether/protocol/encoder"
 require "tether/protocol/parser"

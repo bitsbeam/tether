@@ -14,14 +14,14 @@ module Tether
     DEFAULT_FLUSH_TIMEOUT = 10
     DEFAULT_REQUEST_TIMEOUT = 2
 
-    # @return [Hash, nil] the INFO the server sent on connect
-    attr_reader :server_info
-
     # @return [Symbol] :disconnected, :connected, or :closed
     attr_reader :status
 
-    # @return [Exception, nil] the last asynchronous error seen
-    attr_reader :last_error
+    # The socket this connection reads and writes. Exposed because the
+    # dispatcher answers PING from the reader thread.
+    #
+    # @return [Connection::Transport, nil] nil until {#connect} has run
+    attr_reader :transport
 
     # Connects and returns a client, yielding it and closing after if a block is given.
     #
@@ -54,8 +54,6 @@ module Tether
       @status = :disconnected
       @sid_counter = 0
       @lock = Mutex.new
-      @pongs = Thread::Queue.new
-      @error_handlers = []
     end
 
     # Opens the socket, exchanges INFO and CONNECT, and starts the reader.
@@ -110,7 +108,7 @@ module Tether
         sid: next_sid, subject: subject, queue_group: queue, max_pending: max_pending,
         on_slow_consumer: method(:report_slow_consumer), responder: self, &callback
       )
-      dispatcher.add(subscription)
+      dispatcher.registry.add(subscription)
       @transport.write(Protocol::Encoder.sub(subject, subscription.sid, queue: queue))
       subscription
     end
@@ -128,7 +126,7 @@ module Tether
       @transport.write(Protocol::Encoder.unsub(subscription.sid, max_msgs)) unless @transport.closed?
       return if max_msgs
 
-      dispatcher.remove(subscription.sid)
+      dispatcher.registry.remove(subscription.sid)
       subscription.close
       nil
     end
@@ -167,7 +165,7 @@ module Tether
     def flush(timeout: DEFAULT_FLUSH_TIMEOUT)
       ensure_connected!
       @transport.write(Protocol::PING)
-      raise TimeoutError, "flush timed out after #{timeout}s" if @pongs.pop(timeout: timeout).nil?
+      raise TimeoutError, "flush timed out after #{timeout}s" if dispatcher.await_pong(Deadline.after(timeout)).nil?
 
       true
     end
@@ -184,8 +182,7 @@ module Tether
       @inbox&.close
       @transport&.close
       @reader.join(1) if @reader && @reader != Thread.current
-      dispatcher.clear
-      @pongs.close
+      dispatcher.close
       nil
     end
 
@@ -202,22 +199,25 @@ module Tether
     #
     # @yieldparam error [Exception] the error that arrived, on the reader thread
     # @return [void] nothing
-    def on_error(&handler)
-      @error_handlers << handler
-      nil
-    end
+    def on_error(&handler) = dispatcher.errors.subscribe(&handler)
+
+    # @return [Hash, nil] the INFO the server announced, replaced on every update
+    def server_info = dispatcher.server_info
+
+    # @return [Exception, nil] the last error that arrived outside a call
+    def last_error = dispatcher.errors.last
 
     # Counts live subscriptions. Request/reply adds exactly one, however many
     # requests are in flight.
     #
     # @return [Integer] subscriptions currently registered, including the shared request inbox
-    def subscription_count = dispatcher.size
+    def subscription_count = dispatcher.registry.size
 
     # The ceiling the server advertised in INFO. {#publish} refuses anything
     # larger rather than letting the server close the connection over it.
     #
     # @return [Integer] largest payload the server accepts
-    def max_payload = @server_info&.fetch("max_payload", nil)
+    def max_payload = server_info&.fetch("max_payload", nil)
 
     private
 
@@ -234,13 +234,7 @@ module Tether
     #
     # @return [Protocol::Dispatcher] the dispatcher for this connection
     def dispatcher
-      @dispatcher ||= Protocol::Dispatcher.new(
-        ping: -> { @transport.write(Protocol::PONG) },
-        pong: -> { @pongs.push(true) unless @pongs.closed? },
-        info: ->(json) { @server_info = JSON.parse(json) },
-        error: ->(description) { record_error(ServerError.for(description)) },
-        protocol_error: ->(message) { record_error(ProtocolError.new(message)) }
-      )
+      @dispatcher ||= Protocol::Dispatcher.new(self)
     end
 
     # @return [Protocol::Parser] the parser fed by the reader thread
@@ -249,8 +243,8 @@ module Tether
     end
 
     def read_server_info(deadline)
-      parser.feed(@transport.read(deadline)) until @server_info
-      parser.max_payload = @server_info["max_payload"]
+      parser.feed(@transport.read(deadline)) until dispatcher.server_info
+      parser.max_payload = max_payload
     end
 
     def connect_options
@@ -273,11 +267,11 @@ module Tether
         parser.feed(data)
       end
     rescue ConnectionClosedError, TimeoutError => e
-      record_error(e) unless @status == :closed
+      dispatcher.errors.record(e) unless @status == :closed
     rescue StandardError => e
-      record_error(e)
+      dispatcher.errors.record(e)
     ensure
-      @pongs.close unless @pongs.closed?
+      dispatcher.close
     end
 
     def next_sid
@@ -292,14 +286,7 @@ module Tether
     end
 
     def report_slow_consumer(subscription)
-      record_error(SlowConsumerError.new("dropped a message on #{subscription.subject}"))
-    end
-
-    def record_error(error)
-      @last_error = error
-      @error_handlers.each { |handler| handler.call(error) }
-    rescue StandardError
-      nil
+      dispatcher.errors.record(SlowConsumerError.new("dropped a message on #{subscription.subject}"))
     end
 
     def ensure_connected!

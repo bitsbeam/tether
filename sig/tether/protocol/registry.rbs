@@ -1,0 +1,16 @@
+module Tether
+  module Protocol
+    class Registry
+      @subscriptions: Hash[String, Connection::Subscription]
+      @lock: Thread::Mutex
+
+      def initialize: () -> void
+      def add: (Connection::Subscription subscription) -> Connection::Subscription
+      def remove: (String sid) -> Connection::Subscription?
+      def []: (String sid) -> Connection::Subscription?
+      def to_a: () -> Array[Connection::Subscription]
+      def size: () -> Integer
+      def clear: () -> void
+    end
+  end
+end

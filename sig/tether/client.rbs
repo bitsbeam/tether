@@ -7,19 +7,15 @@ module Tether
     DEFAULT_FLUSH_TIMEOUT: Integer
     DEFAULT_REQUEST_TIMEOUT: Integer
 
-    attr_reader server_info: Hash[String, untyped]?
     attr_reader status: Symbol
-    attr_reader last_error: Exception?
+    attr_reader transport: Connection::Transport?
 
     @uri: String
     @options: Hash[Symbol, untyped]
     @sid_counter: Integer
     @lock: Thread::Mutex
-    @pongs: Thread::Queue
-    @error_handlers: Array[^(Exception) -> void]
     @dispatcher: Protocol::Dispatcher?
     @parser: Protocol::Parser?
-    @transport: Connection::Transport?
     @reader: Thread?
     @inbox: Connection::Inbox?
 
@@ -37,6 +33,8 @@ module Tether
     def connected?: () -> bool
     def closed?: () -> bool
     def on_error: () { (Exception) -> void } -> void
+    def server_info: () -> Hash[String, untyped]?
+    def last_error: () -> Exception?
     def subscription_count: () -> Integer
     def max_payload: () -> Integer?
 
@@ -52,7 +50,6 @@ module Tether
     def next_sid: () -> String
     def check_payload_size!: (String subject, String frame) -> void
     def report_slow_consumer: (Connection::Subscription subscription) -> void
-    def record_error: (Exception error) -> void
     def ensure_connected!: () -> void
   end
 end

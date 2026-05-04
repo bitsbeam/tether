@@ -3,6 +3,7 @@
 require "tether/version"
 require "tether/errors"
 require "tether/deadline"
+require "tether/error_holder"
 require "tether/protocol"
 require "tether/connection"
 require "tether/client"
