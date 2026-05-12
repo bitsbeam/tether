@@ -164,10 +164,7 @@ module Tether
     # @raise [TimeoutError] if the server does not answer in time
     def flush(timeout: DEFAULT_FLUSH_TIMEOUT)
       ensure_connected!
-      @transport.write(Protocol::PING)
-      raise TimeoutError, "flush timed out after #{timeout}s" if dispatcher.await_pong(Deadline.after(timeout)).nil?
-
-      true
+      dispatcher.ping(Deadline.after(timeout))
     end
 
     # Closes the socket, which unblocks the reader's pending read so it can

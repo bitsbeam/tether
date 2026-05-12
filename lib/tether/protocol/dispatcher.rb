@@ -28,22 +28,43 @@ module Tether
         @connection = connection
         @registry = registry
         @errors = errors
-        @pongs = Thread::Queue.new
+        @pongs = []
+        @pong_lock = Mutex.new
+        @closed = false
       end
 
-      # Waits for the server to answer a PING.
+      # Sends a PING and waits for the server to answer it, which it only does
+      # once it has processed everything sent before that PING.
       #
-      # @param deadline [Deadline] how long to wait
-      # @return [true, nil] nil if the deadline passed or the connection closed
-      def await_pong(deadline)
-        @pongs.pop(timeout: deadline.remaining)
+      # The waiter is queued and the PING written under one lock. Registering
+      # after writing would let the answer arrive before anything was waiting
+      # for it, and writing outside the lock would let two threads queue in one
+      # order and write in the other, so a caller could be woken by a PING that
+      # went out before its own work did.
+      #
+      # @param deadline [Deadline] how long to wait for the answer
+      # @return [true] once the server has caught up
+      # @raise [TimeoutError] if the server does not answer in time
+      # @raise [ConnectionClosedError] if the connection goes away first
+      def ping(deadline)
+        waiter = queue_ping
+        return true if waiter.pop(timeout: deadline.remaining)
+        raise ConnectionClosedError, "connection closed while waiting for a PONG" if waiter.closed?
+
+        raise TimeoutError, "the server did not answer a PING within the deadline"
+      ensure
+        @pong_lock.synchronize { @pongs.delete(waiter) } if waiter
       end
 
       # Releases anyone waiting on a PONG and closes every subscription.
       #
       # @return [void] nothing
       def close
-        @pongs.close unless @pongs.closed?
+        @pong_lock.synchronize do
+          @closed = true
+          @pongs.each(&:close)
+          @pongs.clear
+        end
         @registry.clear
         nil
       end
@@ -73,11 +94,14 @@ module Tether
         nil
       end
 
-      # Completes a {Client#flush}.
+      # Answers the oldest waiting {#ping}, and only that one. A PONG proves the
+      # server reached the PING that earned it, so handing it to any other
+      # waiter would report progress that has not happened.
       #
       # @return [void] nothing
       def on_pong
-        @pongs.push(true) unless @pongs.closed?
+        waiter = @pong_lock.synchronize { @pongs.shift }
+        waiter&.push(true)
         nil
       end
 
@@ -113,6 +137,24 @@ module Tether
       def on_protocol_error(message)
         @errors.record(ProtocolError.new(message))
         nil
+      end
+
+      private
+
+      # Holds one answer, so {#on_pong} never blocks on a waiter that gave up
+      # at the same moment.
+      def queue_ping
+        transport = @connection.transport
+        raise ConnectionClosedError, "connection is closed" if transport.nil?
+
+        waiter = Thread::SizedQueue.new(1)
+        @pong_lock.synchronize do
+          raise ConnectionClosedError, "connection is closed" if @closed
+
+          @pongs << waiter
+          transport.write(Protocol::PING)
+        end
+        waiter
       end
     end
   end

@@ -6,10 +6,12 @@ module Tether
       attr_reader server_info: Hash[String, untyped]?
 
       @connection: Client
-      @pongs: Thread::Queue
+      @pongs: Array[Thread::SizedQueue]
+      @pong_lock: Thread::Mutex
+      @closed: bool
 
       def initialize: (Client connection, ?registry: Registry, ?errors: ErrorHolder) -> void
-      def await_pong: (Deadline deadline) -> bool?
+      def ping: (Deadline deadline) -> true
       def close: () -> void
 
       def on_msg: (String subject, String sid, String? reply_to, String? header_bytes, String payload) -> void
@@ -19,6 +21,10 @@ module Tether
       def on_info: (String json) -> void
       def on_error: (String description) -> void
       def on_protocol_error: (String message) -> void
+
+      private
+
+      def queue_ping: () -> Thread::SizedQueue
     end
   end
 end
