@@ -11,8 +11,6 @@ module Tether
 
       private
 
-      def self.write_head: (String frame, String verb, String subject, String? reply_to) -> String
-      def self.buffer: (Integer capacity) -> String
       def self.binary: (String? value) -> String
     end
   end

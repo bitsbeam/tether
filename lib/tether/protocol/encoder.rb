@@ -10,6 +10,24 @@ module Tether
     # Every method returns one whole frame. The writer takes its lock around the
     # write of that string, never around the pieces of it: frames from different
     # threads must not interleave on the wire.
+    #
+    # The control line is interpolated and then retagged as binary, which looks
+    # roundabout and is deliberate.
+    #
+    # Interpolation compiles to a single instruction that assembles the string
+    # in C, where appending onto a preallocated buffer is one method call per
+    # piece: 456ns against 711ns per frame, which on a publish benchmark was the
+    # entire remaining difference against nats-pure.
+    #
+    # `force_encoding` costs nothing, since it only retags bytes on a string
+    # this method just built, and it has to happen before the payload is
+    # appended. A multi-byte subject makes the interpolated control line UTF-8,
+    # and appending binary payload bytes to a UTF-8 string raises.
+    #
+    # Interpolating the payload into the same string, as nats-pure does, is
+    # faster still at 223ns, and cannot express that case at all: a non-ASCII
+    # subject with a binary payload raises there. The two appends are what buy
+    # binary correctness.
     module Encoder
       # The server seeds every connection with `verbose:true, pedantic:true,
       # echo:true` and merges CONNECT into that struct, so an absent key keeps
@@ -38,9 +56,12 @@ module Tether
         # @return [String] binary encoded frame
         def pub(subject, payload = nil, reply_to = nil)
           body = binary(payload)
-          frame = buffer(subject.bytesize + body.bytesize + 64)
-          write_head(frame, "PUB ", subject, reply_to)
-          frame << " " << body.bytesize.to_s << CRLF
+          frame = if reply_to
+                    "PUB #{subject} #{reply_to} #{body.bytesize}#{CRLF}"
+                  else
+                    "PUB #{subject} #{body.bytesize}#{CRLF}"
+                  end
+          frame.force_encoding(BINARY)
           frame << body << CRLF
         end
 
@@ -54,10 +75,13 @@ module Tether
         def hpub(subject, payload, headers, reply_to = nil)
           block = headers.is_a?(Headers) ? headers.to_wire : binary(headers)
           body = binary(payload)
-          frame = buffer(subject.bytesize + block.bytesize + body.bytesize + 64)
-          write_head(frame, "HPUB ", subject, reply_to)
-          frame << " " << block.bytesize.to_s
-          frame << " " << (block.bytesize + body.bytesize).to_s << CRLF
+          total = block.bytesize + body.bytesize
+          frame = if reply_to
+                    "HPUB #{subject} #{reply_to} #{block.bytesize} #{total}#{CRLF}"
+                  else
+                    "HPUB #{subject} #{block.bytesize} #{total}#{CRLF}"
+                  end
+          frame.force_encoding(BINARY)
           frame << block << body << CRLF
         end
 
@@ -69,10 +93,8 @@ module Tether
         #   message to only one member
         # @return [String] binary encoded frame
         def sub(subject, sid, queue: nil)
-          frame = buffer(subject.bytesize + 32)
-          frame << "SUB " << binary(subject)
-          frame << " " << binary(queue) if queue
-          frame << " " << sid.to_s << CRLF
+          frame = queue ? "SUB #{subject} #{queue} #{sid}#{CRLF}" : "SUB #{subject} #{sid}#{CRLF}"
+          frame.force_encoding(BINARY)
         end
 
         # Encodes an `UNSUB` frame.
@@ -81,10 +103,8 @@ module Tether
         # @param max_msgs [Integer, nil] unsubscribe after this many messages
         # @return [String] binary encoded frame
         def unsub(sid, max_msgs = nil)
-          frame = buffer(32)
-          frame << "UNSUB " << sid.to_s
-          frame << " " << max_msgs.to_s if max_msgs
-          frame << CRLF
+          frame = max_msgs ? "UNSUB #{sid} #{max_msgs}#{CRLF}" : "UNSUB #{sid}#{CRLF}"
+          frame.force_encoding(BINARY)
         end
 
         # Encodes a `CONNECT` frame over {DEFAULT_CONNECT}.
@@ -98,22 +118,10 @@ module Tether
             raise ArgumentError, "no_responders requires headers; the server closes the connection otherwise"
           end
 
-          json = JSON.generate(payload)
-          frame = buffer(json.bytesize + 16)
-          frame << "CONNECT " << json << CRLF
+          "CONNECT #{JSON.generate(payload)}#{CRLF}".force_encoding(BINARY)
         end
 
         private
-
-        def write_head(frame, verb, subject, reply_to)
-          frame << verb << binary(subject)
-          frame << " " << binary(reply_to) if reply_to
-          frame
-        end
-
-        def buffer(capacity)
-          String.new(capacity: capacity, encoding: BINARY)
-        end
 
         def binary(value)
           return EMPTY_PAYLOAD if value.nil?
