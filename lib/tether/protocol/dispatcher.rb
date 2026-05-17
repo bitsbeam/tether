@@ -90,7 +90,7 @@ module Tether
       #
       # @return [void] nothing
       def on_ping
-        @connection.transport&.write(Protocol::PONG)
+        @connection.transport&.write(Protocol::PONG, flush: true)
         nil
       end
 
@@ -152,7 +152,7 @@ module Tether
           raise ConnectionClosedError, "connection is closed" if @closed
 
           @pongs << waiter
-          transport.write(Protocol::PING)
+          transport.write(Protocol::PING, flush: true)
         end
         waiter
       end

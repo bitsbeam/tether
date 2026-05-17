@@ -3,23 +3,28 @@ module Tether
     class Transport
       DEFAULT_PORT: Integer
       READ_SIZE: Integer
+      BUFFER_LIMIT: Integer
 
       attr_reader uri: URI::Generic
 
       @socket: Socket?
       @lock: Thread::Mutex
+      @buffer: String
 
       def self.connect: (String | URI::Generic uri, ?deadline: Deadline) -> Transport
 
       def initialize: (String | URI::Generic uri) -> void
       def open: (?Deadline deadline) -> self
       def read: (?Deadline deadline) -> String?
-      def write: (String frame) -> Integer
+      def write: (String frame, ?flush: bool) -> Integer
+      def flush: () -> Integer
+      def buffered: () -> Integer
       def close: () -> void
       def closed?: () -> bool
 
       private
 
+      def flush_buffer: () -> Integer
       def normalize: (String | URI::Generic uri) -> URI::Generic
       def coerce_scheme: (String value) -> String
     end

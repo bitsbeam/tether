@@ -43,7 +43,7 @@ module Tether
         waiter = Thread::Queue.new
         @lock.synchronize { @pending[token] = waiter }
 
-        @client.publish(subject, payload, reply_to: "#{@prefix}.#{token}", headers: headers)
+        @client.publish(subject, payload, reply_to: "#{@prefix}.#{token}", headers: headers, flush: true)
         await(waiter, subject, deadline)
       ensure
         @lock.synchronize { @pending.delete(token) } if token

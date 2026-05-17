@@ -3,7 +3,7 @@
 RSpec.describe Tether::Protocol::Dispatcher do
   subject(:dispatcher) { described_class.new(connection) }
 
-  let(:transport) { instance_double(Tether::Connection::Transport, write: 4) }
+  let(:transport) { instance_double(Tether::Connection::Transport, write: 6) }
   let(:connection) { instance_double(Tether::Client, transport: transport) }
 
   def ping_in_background(dispatcher, seconds = 2)
@@ -26,7 +26,7 @@ RSpec.describe Tether::Protocol::Dispatcher do
     end
 
     it "writes the PING itself, so nothing can answer before a waiter exists" do
-      expect(transport).to receive(:write).with(Tether::Protocol::PING)
+      expect(transport).to receive(:write).with(Tether::Protocol::PING, flush: true)
       thread = ping_in_background(dispatcher)
       sleep 0.05
       dispatcher.on_pong

@@ -14,6 +14,20 @@ module Tether
       DEFAULT_PORT = 4222
       READ_SIZE = 64 * 1024
 
+      # Frames accumulate until this much is waiting, at which point the thread
+      # that filled it writes rather than waiting for the flusher.
+      #
+      # Writing each frame as it arrives cost a syscall per message and made
+      # publishing four times slower with eight threads than with one, since a
+      # lock held across a syscall turns concurrent publishers into a queue.
+      #
+      # The size is measured rather than inherited. Publishing 100k messages:
+      # 32 KB gave 244 syscalls at 710k msg/s, 128 KB gave 62 at 770k, 512 KB
+      # gave 16 at 772k, and 2 MB gave 4 at 753k. Fewer syscalls stop paying
+      # almost immediately, and the largest buffer is slower, so this sits at
+      # the point where the curve flattens rather than at its extreme.
+      BUFFER_LIMIT = 128 * 1024
+
       # @return [URI::Generic] the server this transport is connected to
       attr_reader :uri
 
@@ -33,6 +47,7 @@ module Tether
       def initialize(uri)
         @uri = normalize(uri)
         @lock = Mutex.new
+        @buffer = String.new(capacity: BUFFER_LIMIT, encoding: Encoding::BINARY)
       end
 
       # Opens the socket with TCP_NODELAY set, since the protocol is latency
@@ -67,27 +82,49 @@ module Tether
         raise ConnectionClosedError, "read failed on #{@uri}: #{e.message}"
       end
 
-      # Writes one complete frame.
+      # Buffers one complete frame, and writes when the buffer is full.
       #
-      # The lock spans the whole frame rather than each write, so frames from
-      # different threads cannot interleave on the wire.
+      # The lock spans the whole frame rather than each append, so frames from
+      # different threads cannot interleave, in the buffer or on the wire.
+      #
+      # Buffered means a successful return says the frame is queued, not that
+      # the server has it. Pass flush: true for anything that cannot wait
+      # behind a publish backlog, which is how PING and PONG stay prompt.
       #
       # @param frame [String] a complete, already encoded frame
-      # @return [Integer] bytes written
-      def write(frame)
+      # @param flush [Boolean] write immediately rather than waiting for the flusher
+      # @return [Integer] bytes buffered
+      def write(frame, flush: false)
         @lock.synchronize do
-          socket = @socket or raise ConnectionClosedError, "transport is closed"
-          socket.write(frame)
+          raise ConnectionClosedError, "transport is closed" unless @socket
+
+          @buffer << frame
+          flush_buffer if flush || @buffer.bytesize >= BUFFER_LIMIT
+          frame.bytesize
         end
-      rescue IOError, SystemCallError => e
-        raise ConnectionClosedError, "write failed on #{@uri}: #{e.message}"
       end
 
-      # Closes the socket, which also unblocks a read waiting on it.
+      # Writes whatever is buffered. Called by the flusher, and by whoever
+      # filled the buffer past its limit.
+      #
+      # @return [Integer] bytes written
+      def flush
+        @lock.synchronize { flush_buffer }
+      end
+
+      # @return [Integer] bytes waiting to be written
+      def buffered
+        @lock.synchronize { @buffer.bytesize }
+      end
+
+      # Closes the socket, which also unblocks a read waiting on it. Anything
+      # still buffered is discarded: the connection is going away, and a
+      # partial write would be worse than none.
       #
       # @return [void] nothing
       def close
         @lock.synchronize do
+          @buffer.clear
           @socket&.close
           @socket = nil
         end
@@ -101,6 +138,19 @@ module Tether
       end
 
       private
+
+      # Runs with the lock already held.
+      def flush_buffer
+        return 0 if @buffer.empty?
+
+        socket = @socket or raise ConnectionClosedError, "transport is closed"
+        written = socket.write(@buffer)
+        @buffer.clear
+        written
+      rescue IOError, SystemCallError => e
+        @buffer.clear
+        raise ConnectionClosedError, "write failed on #{@uri}: #{e.message}"
+      end
 
       def normalize(uri)
         parsed = uri.is_a?(URI::Generic) ? uri : URI.parse(coerce_scheme(uri.to_s))

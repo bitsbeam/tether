@@ -43,8 +43,10 @@ subscription = nc.subscribe("orders.*") { |msg| handle(msg) }
 nc.unsubscribe(subscription)
 ```
 
-Publishing is fire and forget: a successful return means the frame reached the socket, not that
-the server processed it. Follow with `flush` when you need that guarantee.
+Publishing is fire and forget. A successful return means the frame is buffered, not that the
+server has it: frames are batched so that many small publishes cost one write rather than one
+each. Pass `flush: true` to send a message immediately, or call `flush` to wait until the server
+has processed everything sent before it.
 
 Each subscription gets its own queue and worker thread, so a slow handler delays only its own
 subscription. The reader thread never runs your code.
