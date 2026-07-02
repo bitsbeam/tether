@@ -41,8 +41,8 @@ Contents:
 
 1. Support everything the server offers a client: core pub/sub and request/reply, headers, every
    authentication mechanism, TLS in all its handshake orders, cluster discovery and reconnect,
-   WebSocket, and the whole JetStream surface including consumers of every kind, Key/Value, Object
-   Store and Services.
+   WebSocket, and the whole JetStream surface: streams, every way of publishing, pull consumers,
+   Key/Value, Object Store and Services.
 2. Be Ruby first. A Ruby developer should be able to guess the API. Go's shapes (functional
    options, channels, contexts, error returns, nanosecond integers) are translated, not
    transliterated.
@@ -59,6 +59,12 @@ Contents:
   enough.
 - Legacy features the reference client has deprecated: encoded connections, the old per-request
   subscription style, the legacy JetStream API shape (`js.subscribe`, `js.pull_subscribe`).
+- Push consumers. The NATS documentation and `nats.go` both steer new code to pull consumers, which
+  do everything push consumers do with explicit flow control. Tether consumes only by pulling:
+  ordered consumers, Key/Value watchers and Object Store readers are all built on the pull engine.
+  A push consumer that already exists on the server can be inspected and deleted, and consuming
+  from it raises `PushConsumerError`. `ack_policy: :flow_control`, which exists only for push
+  delivery, is not offered either.
 - MQTT, leafnode, route and gateway protocols. Tether is a client.
 - System-account administration: the `$SYS` server endpoints, JetStream meta-leader operations,
   account purge, stream peer evacuation and move cancellation. They are plain requests that a user
@@ -92,7 +98,7 @@ reading the code:
 | Server pool | Auth errors are booked against `server_pool.first`, which is the *next* server, not the connected one | The pool tracks the current server explicitly; per-server state attaches to it |
 | Request/reply | The requester publishes, then starts waiting; a reply that arrives in between is lost and the request times out | The waiter is registered before the publish and is a queue, so an early reply is simply there when the requester looks |
 | Flush | PONGs are matched to waiters last-in-first-out, and every server PING adds a waiter nobody owns | A FIFO of waiters; server PINGs never touch it (already implemented) |
-| Write path | No write lock; the flusher, drain, close and reconnect threads all write | One buffer, one lock, whole frames only |
+| Write path | No write lock; the flusher, drain, close and reconnect threads all write | One buffer of whole frames behind a buffer lock, and one I/O lock that serializes socket writes (5.4) |
 | Encoding | Frames are built by interpolation and joined; a UTF-8 frame and a binary frame in one batch raise `Encoding::CompatibilityError` in the flusher, which reconnects and loses the batch | Every frame is binary before it meets another |
 | Back-pressure | The pending buffer is bounded at 32,768 *commands*, not bytes, and publishers block without a timeout during an outage | A byte-bounded reconnect buffer that raises on overflow |
 | Reconnect | A failure after the handshake (resubscribe, buffer replay) leaves the client in `RECONNECTING` forever | Reconnect is one supervised loop; every failure either retries or closes with a callback |
@@ -100,7 +106,7 @@ reading the code:
 | Dispatch | One pool of 24 workers serves every subscription *and* request replies, so 24 slow handlers time out every request on the connection | Replies are resolved on the reader thread with no user code; each subscription has its own worker |
 | Validation | Subjects, replies, queue names and headers are written into the protocol stream unchecked, which allows CRLF injection | Validated at the API boundary |
 | Fork | The child writes the parent's buffered commands to the inherited socket | The child never writes to or shuts down an inherited descriptor |
-| JetStream | Legacy API shape; `fetch` has no heartbeats; generic push consumers ignore flow control; no ordered consumer, no continuous consume, no async publish, no Object Store, no purge or list calls | The modern object model, with the consumer machinery in one reusable place |
+| JetStream | Legacy API shape built around push subscriptions; `fetch` has no heartbeats; no ordered consumer, no continuous consume, no async publish, no Object Store, no purge or list calls | The modern object model, with the consumer machinery in one reusable place |
 | API | Positional arguments and trailing hashes that silently ignore typos, callbacks dispatched by block arity, argument mutation, three unit conventions for durations, closed structs that drop unknown server fields | Keyword arguments, one `Msg` argument, immutable inputs, seconds everywhere, forward-compatible value objects |
 
 ### 2.2 nats.go
@@ -125,7 +131,7 @@ be surprising:
 |---|---|
 | `nc.mu` is held during socket writes and the whole handshake, so a stalled write blocks every API call for up to the one minute flusher timeout | Appending to the buffer and writing the socket take different locks, so a stalled write delays nobody until the buffer's hard cap is reached (5.4) |
 | Functional options (`nats.Name("x")`, `jetstream.PullMaxMessages(10)`) | Keyword arguments |
-| `context.Context` for cancellation and deadlines | `timeout:` taking seconds or a `Tether::Deadline` |
+| `context.Context` for cancellation and deadlines | `Tether::Deadline`, passed down through every blocking call; `timeout:` accepts seconds or a `Deadline` (section 3) |
 | Channels (`MessageBatch.Messages()`, `PubAckFuture.Ok()`, `StatusChanged()`) | `Enumerable`, blocks, and futures with `value`/`wait` |
 | Error return values and sentinel errors | Exceptions in a class hierarchy |
 | `time.Duration` nanoseconds on the wire and in config structs | Seconds as `Numeric`, `Time` for instants; conversion happens in one place |
@@ -149,8 +155,8 @@ testable without a server.
 **The reader thread never runs user code and never blocks.** It parses, looks up, and enqueues. A
 slow handler must not delay a PONG, a reply, or another subscription.
 
-**Whole frames, binary, under one lock.** A frame is built complete and binary before it is
-appended to the write buffer. Frames from different threads cannot interleave, and no string of one
+**Whole frames, binary, appended under one lock.** A frame is built complete and binary before it
+is appended to the write buffer under the writer's buffer lock. Frames from different threads cannot interleave, and no string of one
 encoding ever meets a string of another.
 
 **Every wait is a queue pop with a deadline.** Tether blocks only on `Thread::Queue`,
@@ -161,6 +167,26 @@ and a spec enforces it. A waiter is registered before the action that will satis
 which removes the lost-wakeup class of bug by construction. No tether thread ever joins or waits
 on itself: an operation that would, such as draining a subscription from inside its own handler,
 is defined to start the work and return.
+
+**One `Deadline` per call, never a bare timeout.** `Tether::Deadline` is an absolute instant on the
+monotonic clock. A public method turns its `timeout:` into a `Deadline` once, on entry, with
+`Deadline.coerce`, and from there down only the `Deadline` is passed: to the handshake, the writer,
+a queue pop, a retry loop. Each blocking primitive is given `deadline.remaining`, so a call that
+makes three round trips spends one budget across them and cannot take three times its timeout, which
+is what passing seconds from layer to layer produces. Internal methods take `deadline`, not
+`timeout`, and no internal method starts a clock of its own. Because `timeout:` also accepts a
+`Deadline`, a caller can share one budget across several calls:
+
+```ruby
+deadline = Tether::Deadline.after(5)
+stream   = js.stream("ORDERS", timeout: deadline)
+batch    = stream.consumer("billing", timeout: deadline).fetch(10, timeout: deadline)
+```
+
+`deadline.with_at_most(seconds)` narrows a deadline for one step and never widens it, which is how
+a per-attempt limit composes with an overall one; `nil` and `Deadline.infinite` mean no limit. A
+`Deadline` is only ever consumed by primitives that end themselves; it is never handed to
+`Timeout.timeout`.
 
 **Errors that belong to a call are raised from it; errors that do not are events.** Nothing is ever
 thrown into an unrelated thread. Asynchronous errors go to handlers on a dedicated thread and are
@@ -231,7 +257,7 @@ Files that exist today are marked `✓`; the rest are added by the build order i
 lib/tether.rb                          ✓ Tether.connect
 lib/tether/version.rb                  ✓
 lib/tether/errors.rb                   ✓ hierarchy and the -ERR table
-lib/tether/deadline.rb                 ✓ monotonic deadline
+lib/tether/deadline.rb                 ✓ the deadline every blocking call carries
 lib/tether/error_holder.rb             ✓ becomes connection/events.rb
 lib/tether/client.rb                   ✓ the public connection object
 lib/tether/options.rb                    validated connect options
@@ -272,7 +298,6 @@ lib/tether/jetstream/stream_config.rb    and stream_info, consumer_config, consu
 lib/tether/jetstream/stream.rb
 lib/tether/jetstream/consumer.rb
 lib/tether/jetstream/pull.rb             the pull engine: fetch, consume, messages
-lib/tether/jetstream/push.rb             flow control and heartbeats
 lib/tether/jetstream/ordered.rb          gap detection and recreation
 lib/tether/jetstream/message.rb          ack methods and metadata
 lib/tether/jetstream/publisher.rb        sync, async, batch, counters
@@ -1062,8 +1087,11 @@ consumer.delete
 `js.create_consumer("ORDERS", ...)` and the other stream-level calls also exist on the context,
 taking the stream name first, for code that does not hold a `Stream`.
 
-A consumer with `deliver_subject` set is a push consumer and is returned as a `PushConsumer`,
-which supports `consume` only. Everything else is a pull consumer.
+Tether creates and consumes pull consumers only (section 1). `ConsumerConfig` has no
+`deliver_subject`, `deliver_group`, `flow_control`, `idle_heartbeat` or `rate_limit` keyword, so a
+push consumer cannot be created by accident. A push consumer made by another client still decodes:
+`consumer.info` and `consumer.config.raw` show it, `consumer.push?` is true, it can be deleted, and
+`fetch`, `consume` and `messages` on it raise `PushConsumerError` before anything is sent.
 
 **Fetch**: one pull request, a bounded result.
 
@@ -1185,14 +1213,6 @@ delete the old one in the background so recovery does not wait for it. The user 
 uninterrupted ordered stream. `concurrency:` above one is refused, since it would defeat the
 ordering. Key/Value watchers and Object Store readers are built on this class, so the recovery
 logic exists once.
-
-**Push consumers** bind a subscription to the deliver subject (and deliver group), answer flow
-control requests by publishing an empty message to their reply subject, and answer a stalled
-heartbeat (`Nats-Consumer-Stalled`) the same way. Heartbeat misses are reported through `on_error`.
-With `ack_policy: :flow_control` (API level 4) the flow control reply is also the acknowledgement:
-it must carry `Nats-Last-Consumer` and `Nats-Last-Stream` headers naming the last message
-processed, and an empty reply acknowledges nothing. Tether fills those in from the last message the
-handler returned from, so with this policy a handler does not acknowledge individually.
 
 ### 7.6 Messages and acknowledgement
 
@@ -1498,8 +1518,7 @@ lock held.
 | Per-message TTL; schedules | yes | yes | yes | yes |
 | Atomic batch publish; fast-ingest batches; counters | yes | no | acks parsed only | yes |
 | Pull: fetch, continuous consume, iterator | yes | yes | fetch only | yes |
-| Push consumers with flow control and heartbeats | yes | yes | KV watch only | yes |
-| `ack_policy: flow_control` | yes | config only | config only | yes |
+| Push consumers | yes | yes, legacy | KV watch only | no, by design: inspect and delete only |
 | Ordered consumers | yes | yes | no | yes |
 | Multiple filter subjects; pause; reset; priority groups and pinning | yes | yes | yes | yes |
 | Key/Value, with watch, per-key TTL, limit markers, key filters, mirrors, purge-deletes | conventions | yes | watch only; none of the rest | yes |
@@ -1560,7 +1579,7 @@ do not reshape earlier ones.
 6. **Publishing.** Sync with retries, async with the bounded window, TTL, rollups, schedules,
    atomic and fast batches, counters.
 7. **Consuming.** Consumer management, messages and acks, `fetch`, the pull engine with `consume`
-   and `messages`, priority groups, push consumers, the ordered consumer.
+   and `messages`, priority groups, the ordered consumer.
 8. **Key/Value**, then **Object Store**, both on the ordered consumer.
 9. **Services.**
 10. **WebSocket transport.**
@@ -1591,6 +1610,16 @@ differ from it in these ways, all settled in step 1:
 ## 16. Decisions and their reasons
 
 These settle the open questions recorded in earlier notes.
+
+**Consumers are pull only.** Push delivery is the legacy model: the server sends at its own pace
+and the client can only drop or stall. A pull consumer covers every use, including ordered delivery
+and watching, with the client deciding how much it holds. Supporting both would double the consumer
+machinery to carry a model the server's own documentation advises against.
+
+**`Deadline`, not timeouts, inside the library.** Seconds are a duration and lose their starting
+point each time they cross a method boundary. Every blocking call carries one `Deadline` instead
+(section 3), so a timeout a caller gives is the time the call takes at most, however many round
+trips it makes.
 
 **A request in flight when the connection drops fails immediately.** `nats.go` lets it wait out its
 timeout, since the shared inbox is resubscribed and a responder that answers after the reconnect
