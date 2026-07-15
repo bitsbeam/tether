@@ -149,15 +149,15 @@ be surprising:
 
 **Small objects with contracts.** No object reaches into another's private state. The parser talks
 to a dispatcher through seven methods; a subscription knows nothing about sockets; JetStream uses
-only the public core API plus one internal seam for reader-thread reply resolution. Each piece is
-testable without a server.
+only the public core API plus the two internal seams named in 4.1. Each piece is testable without a
+server.
 
 **The reader thread never runs user code and never blocks.** It parses, looks up, and enqueues. A
 slow handler must not delay a PONG, a reply, or another subscription.
 
-**Whole frames, binary, appended under one lock.** A frame is built complete and binary before it
-is appended to the write buffer under the writer's buffer lock. Frames from different threads cannot interleave, and no string of one
-encoding ever meets a string of another.
+**Whole frames, binary, appended under the buffer lock.** A frame is built complete and binary
+before it is appended to the write buffer under the writer's buffer lock (5.4). Frames from
+different threads cannot interleave, and no string of one encoding ever meets a string of another.
 
 **Every wait is a queue pop with a deadline.** Tether blocks only on `Thread::Queue`,
 `Thread::SizedQueue`, `Mutex`, `ConditionVariable#wait` and socket readiness (`IO#timeout=` for the
@@ -233,7 +233,7 @@ explicit options, no process-wide registries, no runtime `extend`.
             ├──────────────────────────────────────────────────────────────┤
             │ Tether::Client      publish · subscribe · request · drain    │  core API
             ├──────────────────────────────────────────────────────────────┤
-            │ Connection: Lifecycle · ServerPool · Writer · Reader ·       │  one live
+            │ Connection: Lifecycle · ServerPool · Handshake · Writer ·    │  one live
             │   Keepalive · Subscription · Inbox · Events · Timer          │  connection
             ├──────────────────────────────────────────────────────────────┤
             │ Transport: TCP · TLS · WebSocket     Auth: token/user/nkey/jwt│  bytes
@@ -400,7 +400,7 @@ Reconnect is one loop on one transient thread, started when the socket is lost w
 3. After each full pass over the pool, wait `wait` seconds plus a random jitter (`jitter`, or
    `tls_jitter` over TLS). `reconnect: { delay: ->(attempt) { ... } }` replaces the wait entirely.
    The wait is a timed queue pop, so `close` and `force_reconnect` interrupt it.
-4. Run the handshake. On failure emit `:error`, and if the server reported the same authentication
+4. Run the handshake. On failure emit `:reconnect_error`, and if the server reported the same authentication
    error twice in a row, close: the credentials will not get better by retrying.
 5. On success, in one critical section under the writer's buffer lock: snapshot the registry;
    put a `SUB` for every live subscription, followed by `UNSUB <sid> <remaining>` for those with an
@@ -503,8 +503,8 @@ violation gets that error as an event and from its next `next` call, and stays r
 later reconnect with new permissions can succeed.
 
 **A resolver** is a registry entry with no queue and no worker, used by library components that
-must not be starved by user handlers: the request mux, the async publish ack collector, and the
-single-shot `fetch`. Its `deliver` runs on the reader thread and only does a hash lookup and a
+must not be starved by user handlers: the request mux, `request_many`, the async publish ack
+collector, the single-shot `fetch`, and the pull engine's consume loop. Its `deliver` runs on the reader thread and only does a hash lookup and a
 queue push or counter update. `Client#resolver(subject) { |msg| ... }` creates one; it is internal
 API, documented as such, and the block must obey the reader-thread rule. Appending a frame to the
 write buffer is allowed from a resolver, since it cannot block (5.4).
@@ -515,8 +515,8 @@ thread → waiter queue → requester, with one thread handoff.
 ### 5.7 Keepalive
 
 `Connection::Keepalive` sends a `PING` every `ping_interval` (120 seconds). If `max_pings_out` (2)
-PINGs are outstanding when the timer fires, the connection is stale: the socket is closed and
-reconnect begins. Any PONG resets the count. Each keepalive `PING` puts a placeholder in the PONG
+PINGs are outstanding when the timer fires, the connection is stale: the timer reports the socket as lost to
+`Lifecycle`, which records the transition and hands the rest to the reconnect thread (12.2). Any PONG resets the count. Each keepalive `PING` puts a placeholder in the PONG
 FIFO in the same critical section as the append, so its PONG is never mistaken for the answer to a
 caller's `flush`. The timer is an entry in the connection's `Timer` (5.10), not a thread of its
 own, and its callback only appends and kicks.
@@ -580,7 +580,7 @@ a service's `on_stop`. That keeps their ordering relative to the messages they c
 consumer must recreate itself. If they used `on_reconnect`, a slow user handler ahead of them in
 the queue would delay recovery, and every loop would leave a handler behind. They use
 `Client#listen { |event| ... }` instead, an internal seam that returns a cancellable handle and is
-invoked on the lifecycle thread making the transition. A listener must not block: it posts to its
+invoked on the thread making the transition. A listener must not block: it posts to its
 owner's control queue and returns.
 
 ### 5.10 Timer
@@ -650,7 +650,7 @@ generation on the client, made of the process id recorded at connect. Every publ
 belongs to a connection (the client, subscriptions, JetStream handles, futures, watchers) compares
 it with `Process.pid` on entry to its public methods. No hook is installed on `Process`.
 
-In the child, the first such call resets the client under the lifecycle lock, so two child threads
+In the child, the first such call resets the client under a lock of its own, so two child threads
 cannot both do it:
 
 1. Close the child's copy of the raw descriptor without writing to it, without `shutdown`, and
@@ -1424,7 +1424,7 @@ Tether::Error
 │   │   ├── JetStreamNotEnabledError · InsufficientResourcesError · RequiredApiLevelError · ...
 │   ├── NoStreamResponseError · TooManyStalledMessagesError · IncompleteBatchError
 │   ├── TooManyResultsError
-│   ├── ConsumerDeletedError · NoHeartbeatError · PinIdMismatchError
+│   ├── ConsumerDeletedError · NoHeartbeatError · PinIdMismatchError · PushConsumerError
 │   └── AlreadyAckedError · NotJetStreamMessageError
 ├── KeyValue::Error
 │   ├── BucketNotFoundError · KeyNotFoundError · InvalidKeyError · InvalidBucketNameError
@@ -1453,12 +1453,12 @@ codes.
 | Thread | Count | Lifetime | Does |
 |---|---|---|---|
 | reader | 1 per live socket | until the socket closes | read, parse, dispatch; never user code, never blocks on anything but the socket read |
-| flusher | 1 per live socket | until the socket closes | writes the buffer when kicked |
+| flusher | 1 per client | first connect until close | writes the buffer when kicked |
 | timer | 1 per client | connect until close | fires pings, heartbeat monitors, ack timeouts, backoff; only appends and posts |
 | events | 0 or 1 per client | first handler registered until `:close` is delivered | runs connection event handlers in order |
 | reconnect | 0 or 1 | one outage | the reconnect loop |
 | subscription worker | `concurrency` per subscription with a block | until the subscription closes | runs the user's block |
-| consume worker | `concurrency` per `consume`/`messages` | until stopped | runs the block, issues pulls, serves the control queue |
+| consume worker | `concurrency` per `consume` | until stopped | runs the block, issues pulls, serves the control queue; a `messages` iterator has no worker, the thread calling `next` does this work |
 
 All threads are named `tether:<role>` and none sets `abort_on_exception`. A connected client with
 no handlers and no block subscriptions runs three threads. Threads end because the thing they block on is closed (a
@@ -1478,8 +1478,11 @@ socket, a queue), never because another thread killed them.
 Ordering, to exclude deadlock: `lifecycle → writer I/O → writer buffer → registry`. The reconnect
 replay is the one place that takes the registry lock under the buffer lock, to snapshot it.
 `inbox` and per-object locks are leaves that are never held while taking another lock. The reader
-and timer threads take only the buffer lock, the registry lock and leaf locks, none of which is
-ever held across I/O, so neither can be stalled by a slow socket. User code is never called with a
+and timer threads take only the buffer lock, the registry lock, leaf locks and, to report a lost
+socket, the lifecycle lock. None of these is ever held across I/O, so neither thread can be stalled
+by a slow socket. Reporting a lost socket only records the transition and starts the reconnect
+thread; closing the old socket, joining threads and connecting again all happen there. The fork
+reset (5.12) has its own lock for the same reason: the fresh connect it ends with is I/O. User code is never called with a
 lock held.
 
 ### 12.3 Guarantees
@@ -1602,7 +1605,7 @@ differ from it in these ways, all settled in step 1:
 | `subscription.next_message(deadline)` | `subscription.next(timeout:)` |
 | `client.build_inbox_subject` | `client.new_inbox` |
 | `client.server_info` returning a `Hash` | returning a `ServerInfo` |
-| `client.subscription_count` | removed; `client.stats` and the registry are internal |
+| `client.subscription_count` | removed; the registry is internal |
 | `ConnectionReconnectingError` | `DisconnectedError` |
 
 ---
@@ -1658,7 +1661,7 @@ seconds in every method.
 
 **`nil` is never an in-band signal.** A missing key returns `nil` from `get` because absence is a
 value there, but a watcher's "initial values done" is a state and an event, and a fetch that finds
-nothing returns an empty array.
+nothing returns an empty batch.
 
 **Renames from `nats-pure`**, for the migration guide:
 
