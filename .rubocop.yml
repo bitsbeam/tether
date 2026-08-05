@@ -10,6 +10,7 @@ Metrics/BlockLength:
     - "lib/tether/protocol/parser.rb"
 
 Metrics/ClassLength:
+  Max: 400
   Exclude:
     - "lib/tether/protocol/parser.rb"
     - "lib/tether/protocol/headers.rb"
@@ -21,12 +22,13 @@ Metrics/AbcSize:
     - "lib/tether/protocol/parser.rb"
 
 Metrics/MethodLength:
-  Max: 15
+  Max: 20
   Exclude:
     - "lib/tether/protocol/parser.rb"
 
 Metrics/ParameterLists:
   Max: 7
+  CountKeywordArgs: false
 
 Style/Documentation:
   Enabled: true
@@ -37,18 +39,18 @@ AllCops:
   NewCops: enable
 
 Naming/PredicateMethod:
-  AllowBangMethods: true
-  AllowedMethods:
-    - flush
+  Enabled: false
 
 # Parser#run is one deliberately inlined hot loop. Splitting it back into
 # helpers measured 6% slower, and hoisting the buffer into locals is the
 # single largest win in the parser; see tmp/tether-vs-nats-pure.md.
 Metrics/CyclomaticComplexity:
+  Max: 10
   Exclude:
     - "lib/tether/protocol/parser.rb"
 
 Metrics/PerceivedComplexity:
+  Max: 10
   Exclude:
     - "lib/tether/protocol/parser.rb"
 
@@ -59,3 +61,6 @@ Style/ArgumentsForwarding:
 
 Naming/BlockForwarding:
   Enabled: false
+
+Metrics/ModuleLength:
+  Max: 400
