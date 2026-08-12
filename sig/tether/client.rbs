@@ -1,60 +1,88 @@
 module Tether
-  def self.connect: (?String? uri, **untyped options) ?{ (Client) -> untyped } -> untyped
-
   class Client
-    DEFAULT_URI: String
-    DEFAULT_CONNECT_TIMEOUT: Integer
-    DEFAULT_FLUSH_TIMEOUT: Integer
+    # Decides whether a reply ends {#request_many}; the reply it returns true for is not collected.
+    interface _Sentinel
+      def call: (Protocol::Msg msg) -> boolish
+    end
+
+    type urls = String | Array[String]
+    type headers = Protocol::Headers | Protocol::Headers::entries
+    type registration = Connection::Events::Registration
+
+    DEFAULT_URL: String
     DEFAULT_REQUEST_TIMEOUT: Integer
+    DEFAULT_FLUSH_TIMEOUT: Integer
 
-    attr_reader status: Symbol
-    attr_reader transport: Connection::Transport?
+    attr_reader options: Options
 
-    @uri: String
-    @options: Hash[Symbol, untyped]
-    @sid_counter: Integer
+    @connection: Connection::Lifecycle
     @lock: Thread::Mutex
-    @flush_signal: Thread::SizedQueue
-    @flusher: Thread?
-    @dispatcher: Protocol::Dispatcher?
-    @parser: Protocol::Parser?
-    @reader: Thread?
     @inbox: Connection::Inbox?
+    @inbox_pid: Integer?
 
-    def self.connect: (?String? uri, **untyped options) ?{ (Client) -> untyped } -> untyped
+    def self.connect: (?urls? urls, **untyped options) -> Client
+                    | [T] (?urls? urls, **untyped options) { (Client) -> T } -> T
 
-    def initialize: (?String? uri, **untyped options) -> void
-    def connect: (?timeout: Numeric?) -> self
-    def publish: (String subject, ?String? payload, ?reply_to: String?, ?headers: Protocol::Headers?, ?flush: bool) -> void
-    def subscribe: (String subject, ?queue: String?, ?max_pending: Integer) ?{ (Protocol::Msg) -> void } -> Connection::Subscription
-    def unsubscribe: (Connection::Subscription subscription, ?Integer? max_msgs) -> void
-    def request: (String subject, ?String? payload, ?timeout: Numeric?, ?headers: Protocol::Headers?) -> Protocol::Msg
-    def build_inbox_subject: () -> String
-    def flush: (?timeout: Numeric?) -> bool
-    def close: () -> void
+    def initialize: (?urls? urls, **untyped options) -> void
+    def connect: () -> self
+    def publish: (String subject, ?String? payload, ?reply_to: String?, ?headers: headers?, ?flush: bool) -> self
+    def subscribe: (String subject, ?queue: String?, ?max: Integer?, ?max_pending: Integer?, ?max_pending_bytes: Integer?, ?concurrency: Integer) ?{ (Protocol::Msg msg) -> void } -> Connection::Subscription
+    def request: (String subject, ?String? payload, ?headers: headers?, ?timeout: timeout) -> Protocol::Msg
+    def request_many: (String subject, ?String? payload, ?headers: headers?, ?max: Integer?, ?stall: Numeric?, ?sentinel: _Sentinel?, ?timeout: timeout) -> Array[Protocol::Msg]
+                    | (String subject, ?String? payload, ?headers: headers?, ?max: Integer?, ?stall: Numeric?, ?sentinel: _Sentinel?, ?timeout: timeout) { (Protocol::Msg msg) -> void } -> Integer
+    def new_inbox: () -> String
+    def flush: (?timeout: timeout) -> self
+    def rtt: (?timeout: timeout) -> Float
+    def drain: (?timeout: timeout) -> self
+    def close: () -> self
+    def force_reconnect: () -> self
+    def after_fork: () -> self
+    def status: () -> Connection::Lifecycle::status
     def connected?: () -> bool
+    def reconnecting?: () -> bool
+    def draining?: () -> bool
     def closed?: () -> bool
-    def on_error: () { (Exception) -> void } -> void
-    def server_info: () -> Hash[String, untyped]?
-    def last_error: () -> Exception?
-    def subscription_count: () -> Integer
+    def server_info: () -> ServerInfo?
     def max_payload: () -> Integer?
+    def servers: () -> Array[Connection::Server]
+    def servers=: (urls urls) -> void
+    def stats: () -> Stats
+    def last_error: () -> Exception?
+    def user_info: (?timeout: timeout) -> Hash[String, untyped]
+
+    def on_error: () { (Exception error) -> void } -> registration
+    def on_connect: () { (Connection::Server server) -> void } -> registration
+    def on_disconnect: () { (Exception? error) -> void } -> registration
+    def on_reconnect: () { (Connection::Server server) -> void } -> registration
+    def on_reconnect_error: () { (Exception error) -> void } -> registration
+    def on_close: () { () -> void } -> registration
+    def on_lame_duck: () { (Connection::Server server) -> void } -> registration
+    def on_servers_discovered: () { (Array[Connection::Server] servers) -> void } -> registration
+    def on_status: () { (Connection::Lifecycle::status status) -> void } -> registration
+
+    def resolver: (String subject) { (Protocol::Msg msg) -> void } -> Connection::Resolver
+    def listen: () { (Symbol event, untyped detail) -> void } -> registration
+    def timer: () -> Connection::Timer
+    def generation: () -> Integer
+    def unsubscribed: (Connection::entry entry, ?Integer? max) -> void
+    def forget: (Connection::entry entry) -> void
+    def report_slow_consumer: (Connection::Subscription subscription) -> void
+    def report_handler_error: (Exception error, ?untyped msg) -> void
+    def report_error: (Exception error) -> void
+    def inspect: () -> String
 
     private
 
+    def register: (Connection::Subscription entry) -> Connection::Subscription
+                | (Connection::Resolver entry) -> Connection::Resolver
+    def ensure_accepting: () -> void
+    def own_thread?: () -> bool
+    def check_subject: (String subject) -> String
+    def encode: (String subject, String? payload, String? reply_to, headers? headers) -> String
+    def check_size: (String subject, Integer size) -> true
     def inbox: () -> Connection::Inbox
-    def dispatcher: () -> Protocol::Dispatcher
-    def parser: () -> Protocol::Parser
-    def read_server_info: (Deadline deadline) -> void
-    def connect_options: () -> Hash[Symbol, untyped]
-    def start_reader: () -> Thread
-    def start_flusher: () -> Thread
-    def flush_loop: () -> void
-    def kick_flusher: () -> void
-    def read_loop: () -> void
-    def next_sid: () -> String
-    def check_payload_size!: (String subject, String frame) -> void
-    def report_slow_consumer: (Connection::Subscription subscription) -> void
-    def ensure_connected!: () -> void
+    def collect: (Thread::Queue replies, String subject, Deadline deadline, max: Integer?, stall: Numeric?, sentinel: _Sentinel?) -> Array[Protocol::Msg]
+               | (Thread::Queue replies, String subject, Deadline deadline, max: Integer?, stall: Numeric?, sentinel: _Sentinel?) { (Protocol::Msg msg) -> void } -> Integer
+    def no_responders: (String subject, Array[Protocol::Msg] collected) -> nil
   end
 end

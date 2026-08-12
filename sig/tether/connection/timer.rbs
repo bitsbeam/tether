@@ -1,0 +1,43 @@
+module Tether
+  module Connection
+    class Timer
+      type callback = ^() -> void
+
+      class Entry
+        attr_accessor at: Float
+        attr_reader interval: Numeric?
+
+        @timer: Timer
+        @callback: callback
+        @canceled: bool
+
+        def initialize: (Timer timer, Float at, Numeric? interval, callback callback) -> void
+        def cancel: () -> void
+        def canceled?: () -> bool
+        def reset: (?Numeric? seconds) -> void
+        def call: () -> void
+      end
+
+      @on_error: (^(StandardError error) -> void)?
+      @entries: Array[Entry]
+      @lock: Thread::Mutex
+      @wakeup: Thread::ConditionVariable
+      @stopped: bool
+      @thread: Thread?
+
+      def initialize: (?on_error: (^(StandardError error) -> void)?) -> void
+      def after: (Numeric seconds) { () -> void } -> Entry
+      def every: (Numeric seconds) { () -> void } -> Entry
+      def remove: (Entry entry) -> void
+      def reschedule: (Entry entry, Numeric seconds) -> void
+      def stop: () -> void
+
+      private
+
+      def schedule: (Numeric seconds, Numeric? interval, callback callback) -> Entry
+      def run: () -> void
+      def next_due: () -> Entry?
+      def take: (Entry entry) -> Entry
+    end
+  end
+end

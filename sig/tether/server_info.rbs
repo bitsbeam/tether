@@ -1,0 +1,38 @@
+module Tether
+  class ServerInfo
+    FIELDS: Hash[Symbol, String]
+
+    attr_reader raw: Hash[String, untyped]
+
+    def initialize: (Hash[String, untyped] raw) -> void
+
+    def id: () -> String?
+    def name: () -> String?
+    def version: () -> String?
+    def host: () -> String?
+    def port: () -> Integer?
+    def max_payload: () -> Integer?
+    def proto: () -> Integer?
+    def client_id: () -> Integer?
+    def client_ip: () -> String?
+    def cluster: () -> String?
+    def domain: () -> String?
+    def nonce: () -> String?
+    def git_commit: () -> String?
+    def go: () -> String?
+    def account: () -> String?
+    def xkey: () -> String?
+
+    def headers?: () -> bool
+    def jetstream?: () -> bool
+    def auth_required?: () -> bool
+    def tls_required?: () -> bool
+    def tls_available?: () -> bool
+    def lame_duck?: () -> bool
+    def api_level: () -> Integer
+    def connect_urls: () -> Array[String]
+    def []: (String | Symbol key) -> untyped
+    def to_h: () -> Hash[String, untyped]
+    def inspect: () -> String
+  end
+end

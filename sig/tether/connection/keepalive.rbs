@@ -1,0 +1,27 @@
+module Tether
+  module Connection
+    class Keepalive
+      # Told, with no arguments, that the connection is stale.
+      interface _StaleHandler
+        def call: () -> void
+      end
+
+      @timer: Timer
+      @writer: Writer
+      @interval: Numeric?
+      @max_out: Integer
+      @on_stale: _StaleHandler
+      @outstanding: Integer
+      @entry: Timer::Entry?
+
+      def initialize: (timer: Timer, writer: Writer, interval: Numeric?, max_out: Integer, on_stale: _StaleHandler) -> void
+      def start: () -> void
+      def stop: () -> void
+      def pong: () -> void
+
+      private
+
+      def tick: () -> void
+    end
+  end
+end

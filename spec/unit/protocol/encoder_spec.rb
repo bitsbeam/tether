@@ -31,9 +31,22 @@ RSpec.describe Tether::Protocol::Encoder do
 
       expect(described_class.pub("foo", payload)).to eq("PUB foo 5\r\n#{payload}\r\n".b)
     end
+
+    it "keeps the frame binary so a binary payload can follow a multi-byte subject" do
+      frame = described_class.pub("täst", "\xff\xfe".b)
+
+      expect(frame.encoding).to eq(Encoding::BINARY)
+      expect(frame).to eq("PUB täst 2\r\n".b + "\xff\xfe".b + "\r\n".b)
+    end
   end
 
   describe ".hpub" do
+    it "keeps the frame binary for a multi-byte subject" do
+      frame = described_class.hpub("täst", "\x80".b, Tether::Protocol::Headers["K" => "v"])
+
+      expect(frame.encoding).to eq(Encoding::BINARY)
+    end
+
     it "encodes the header size and the total size" do
       frame = described_class.hpub("foo", "bar", Tether::Protocol::Headers["Nats-Msg-Id" => "1"])
 
@@ -54,6 +67,10 @@ RSpec.describe Tether::Protocol::Encoder do
   end
 
   describe ".sub" do
+    it "keeps the frame binary for a multi-byte subject" do
+      expect(described_class.sub("täst", 1).encoding).to eq(Encoding::BINARY)
+    end
+
     it "encodes a subscription" do
       expect(described_class.sub("foo.>", 7)).to eq("SUB foo.> 7\r\n")
     end
@@ -100,20 +117,6 @@ RSpec.describe Tether::Protocol::Encoder do
 
     it "refuses no_responders without headers, which the server closes the connection over" do
       expect { described_class.connect(headers: false) }.to raise_error(ArgumentError, /no_responders requires headers/)
-    end
-  end
-
-  describe "subjects that are not ASCII" do
-    it "keeps the frame binary so a binary payload can follow the subject" do
-      frame = described_class.pub("täst", "\xff\xfe".b)
-
-      expect(frame.encoding).to eq(Encoding::BINARY)
-      expect(frame).to eq("PUB t\xC3\xA4st 2\r\n\xFF\xFE\r\n".b)
-    end
-
-    it "keeps SUB and HPUB binary too" do
-      expect(described_class.sub("täst", 1).encoding).to eq(Encoding::BINARY)
-      expect(described_class.hpub("täst", "\x80".b, Tether::Protocol::Headers["K" => "v"]).encoding).to eq(Encoding::BINARY)
     end
   end
 end

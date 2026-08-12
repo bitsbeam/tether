@@ -1,4 +1,6 @@
 module Tether
   module Connection
+    # What a {Protocol::Registry} routes messages to.
+    type entry = Subscription | Resolver
   end
 end

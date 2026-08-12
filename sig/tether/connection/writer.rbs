@@ -1,0 +1,55 @@
+module Tether
+  module Connection
+    class Writer
+      # Told which transport a write failed on, and why.
+      interface _FailureHandler
+        def call: (Transport transport, Exception error) -> void
+      end
+
+      type mode = :buffering | :open | :closed
+      type failure = [ Transport, ConnectionError | TimeoutError ]
+
+      BUFFER_LIMIT: Integer
+      HARD_CAP: Integer
+
+      @write_timeout: Numeric
+      @reconnect_buffer: Integer
+      @counters: Counters
+      @on_failure: _FailureHandler
+      @buffer_lock: Thread::Mutex
+      @io_lock: Thread::Mutex
+      @buffer: String
+      @spare: String
+      @pongs: Array[Thread::Queue?]
+      @buffered_pings: Integer
+      @mode: mode
+      @transport: Transport?
+      @kick: Thread::SizedQueue
+      @flusher: Thread?
+
+      def initialize: (write_timeout: Numeric, reconnect_buffer: Integer, counters: Counters, on_failure: _FailureHandler) -> void
+      def attach: (Transport transport) { () -> String } -> void
+      def detach: (Exception error) -> void
+      def write: (String frame, ?flush: bool, ?control: bool, ?messages: Integer) -> void
+      def ping: (Thread::Queue waiter) -> void
+      def keepalive_ping: () -> void
+      def pong: () -> void
+      def resolve_pong: () -> void
+      def kick: () -> void
+      def buffered: () -> Integer
+      def close: (?flush: bool) -> void
+
+      private
+
+      def empty_buffer: () -> String
+      def accept?: (String frame, bool control) -> bool
+      def append_ping: (Thread::Queue? waiter) -> void
+      def take_waiters: () -> Array[Thread::Queue?]
+      def drain: (wait: bool) -> bool
+      def write_pending: (Deadline deadline) -> failure?
+      def swap: () -> [ Transport, String ]?
+      def final_write: () -> void
+      def start_flusher: () -> void
+    end
+  end
+end

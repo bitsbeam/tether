@@ -4,6 +4,7 @@ module Tether
       type entries = Hash[String, String | Array[String]]
 
       VERSION: String
+      CRLF: String
       CONTROL: Integer
       NO_CONTENT: Integer
       BAD_REQUEST: Integer
@@ -16,6 +17,8 @@ module Tether
       TOO_MANY_REQUESTS: Integer
       INTERNAL_ERROR: Integer
       NO_RESPONDERS: Integer
+      TOKEN: Regexp
+      FORBIDDEN_IN_VALUE: Regexp
 
       attr_reader status: Integer?
       attr_reader description: String?
@@ -23,8 +26,8 @@ module Tether
       @entries: Hash[String, Array[String]]
 
       def self.parse: (String? bytes) -> Headers
-      def self.parse_version_line: (String version) -> ([Integer?, String?])
-      def self.[]: (entries) -> Headers
+      def self.parse_version_line: (String version) -> [ Integer?, String? ]
+      def self.[]: (entries entries) -> Headers
 
       def initialize: (?entries: entries, ?status: Integer?, ?description: String?) -> void
       def []: (String key) -> String?
@@ -33,8 +36,8 @@ module Tether
       def values: (String key) -> Array[String]
       def delete: (String key) -> Array[String]?
       def key?: (String key) -> bool
-      def each: () { (String, String) -> void } -> self
-               | () -> Enumerator[[String, String], self]
+      def each: () { (String key, String value) -> void } -> self
+              | () -> Enumerator[[ String, String ], self]
       def keys: () -> Array[String]
       def empty?: () -> bool
       def no_responders?: () -> bool
@@ -47,8 +50,8 @@ module Tether
 
       private
 
-      def validate_key: (untyped key) -> String
-      def validate_value: (untyped value) -> String
+      def validate_key: (_ToS key) -> String
+      def validate_value: (_ToS value) -> String
       def status_suffix: () -> String
     end
   end

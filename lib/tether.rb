@@ -3,7 +3,10 @@
 require "tether/version"
 require "tether/errors"
 require "tether/deadline"
-require "tether/error_holder"
+require "tether/options"
+require "tether/server_info"
+require "tether/stats"
+require "tether/auth"
 require "tether/protocol"
 require "tether/connection"
 require "tether/client"
@@ -12,10 +15,14 @@ require "tether/client"
 module Tether
   # Connects to a NATS server.
   #
-  # @param uri [String, nil] defaults to NATS_URL, then nats://127.0.0.1:4222
-  # @param options [Hash{Symbol => Object}] CONNECT overrides plus :connect_timeout
+  # @param urls [String, Array<String>, nil] defaults to NATS_URL, then nats://127.0.0.1:4222
+  # @param options [Hash{Symbol => Object}] see {Options::DEFAULTS}
   # @return [Client, Object] the client, or the block's value when a block is given
-  def self.connect(uri = nil, **options, &)
-    Client.connect(uri, **options, &)
+  def self.connect(urls = nil, **options, &)
+    Client.connect(urls, **options, &)
   end
+
+  Msg = Protocol::Msg
+  Headers = Protocol::Headers
+  Subscription = Connection::Subscription
 end

@@ -1,29 +1,28 @@
 module Tether
   module Connection
     class Inbox
-      INBOX_PREFIX: String
-
       attr_reader prefix: String
 
       @client: Client
-      @max_pending: Integer
+      @offset: Integer
       @pending: Hash[String, Thread::Queue]
       @lock: Thread::Mutex
       @counter: Integer
-      @subscription: Subscription?
+      @resolver: Resolver?
+      @listener: Events::Registration?
 
-      def initialize: (Client client, ?prefix: String?, ?max_pending: Integer) -> void
-      def request: (String subject, ?String? payload, ?deadline: Deadline, ?headers: Protocol::Headers?) -> Protocol::Msg
-      def start: () -> Subscription
-      def started?: () -> bool
+      def initialize: (Client client) -> void
+      def request: (String subject, String? payload, deadline: Deadline, ?headers: Client::headers?) -> Protocol::Msg
       def pending: () -> Integer
-      def close: () -> void
+      def fail_all: (Exception error) -> void
 
       private
 
+      def start: () -> void
+      def interrupted: (Symbol event) -> void
+      def register: (Thread::Queue waiter) -> String
       def await: (Thread::Queue waiter, String subject, Deadline deadline) -> Protocol::Msg
       def resolve: (Protocol::Msg msg) -> void
-      def next_token: () -> String
     end
   end
 end

@@ -2,58 +2,79 @@
 
 module Tether
   module Protocol
-    # The connection's subscriptions, keyed by the token the server echoes back
-    # on every message.
+    # The live subscriptions of a connection, by sid.
     #
-    # Registration happens on whichever thread called subscribe, and lookup
-    # happens on the reader thread for every frame, so the map is guarded.
+    # An entry is anything that responds to `sid`, `deliver`, `replay_frames`,
+    # `close` and `abandon`: a {Connection::Subscription} or a
+    # {Connection::Resolver}.
     class Registry
       def initialize
-        @subscriptions = {}
+        @entries = {}
         @lock = Mutex.new
+        @sid = 0
       end
 
-      # Registers a subscription so messages carrying its sid reach it.
-      #
-      # @param subscription [Connection::Subscription] the subscription to route messages to
-      # @return [Connection::Subscription] the subscription that was registered
-      def add(subscription)
-        @lock.synchronize { @subscriptions[subscription.sid] = subscription }
-        subscription
+      # @return [String] a sid no entry of this connection has used
+      def next_sid
+        @lock.synchronize { (@sid += 1).to_s }
       end
 
-      # Stops routing to a subscription. Messages already in flight for it are
-      # dropped when they arrive.
-      #
-      # @param sid [String] the token the subscription was registered under
-      # @return [Connection::Subscription, nil] the subscription that was registered, if any
+      # @param entry [Object] the entry to route messages to
+      # @return [Object] the entry
+      def add(entry)
+        @lock.synchronize { @entries[entry.sid] = entry }
+        entry
+      end
+
+      # @param sid [String] the sid to stop routing
+      # @return [Object, nil] the entry that was removed
       def remove(sid)
-        @lock.synchronize { @subscriptions.delete(sid) }
+        @lock.synchronize { @entries.delete(sid) }
       end
 
-      # Looks up a subscription by the token the server echoed back.
-      #
-      # @param sid [String] the token echoed back by the server
-      # @return [Connection::Subscription, nil] nil once the subscription has been removed
+      # @param sid [String] the sid a message arrived for
+      # @return [Object, nil] the entry, if it is still registered
       def [](sid)
-        @lock.synchronize { @subscriptions[sid] }
+        @lock.synchronize { @entries[sid] }
       end
 
-      # @return [Array<Connection::Subscription>] a snapshot, safe to iterate while others subscribe
+      # @return [Array<Object>] every entry
       def to_a
-        @lock.synchronize { @subscriptions.values }
+        @lock.synchronize { @entries.values }
       end
 
-      # @return [Integer] how many subscriptions are registered
+      # @return [Integer] how many entries are registered
       def size
-        @lock.synchronize { @subscriptions.size }
+        @lock.synchronize { @entries.size }
       end
 
-      # Closes every subscription and empties the registry.
+      # @return [String] the SUB and UNSUB frames that restore every entry on a new connection
+      def replay_frames
+        @lock.synchronize { @entries.each_value.map(&:replay_frames).join }
+      end
+
+      # Removes and closes every entry.
+      #
+      # @param error [Exception, nil] why, when it was not requested
+      # @return [void] nothing
+      def close(error = nil)
+        take.each { |entry| entry.close(error) }
+        nil
+      end
+
+      # Removes every entry without running any of their callbacks, for a
+      # forked child that inherited them.
       #
       # @return [void] nothing
-      def clear
-        @lock.synchronize { @subscriptions.values.tap { @subscriptions.clear } }.each(&:close)
+      def abandon
+        take.each(&:abandon)
+        nil
+      end
+
+      private
+
+      def take
+        @lock.synchronize { @entries.values.tap { @entries.clear } }
       end
     end
   end

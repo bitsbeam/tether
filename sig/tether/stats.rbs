@@ -1,0 +1,30 @@
+module Tether
+  class Stats < Data
+    attr_reader messages_in: Integer
+    attr_reader messages_out: Integer
+    attr_reader bytes_in: Integer
+    attr_reader bytes_out: Integer
+    attr_reader reconnects: Integer
+
+    def self.new: (Integer messages_in, Integer messages_out, Integer bytes_in, Integer bytes_out, Integer reconnects) -> instance
+                | (messages_in: Integer, messages_out: Integer, bytes_in: Integer, bytes_out: Integer, reconnects: Integer) -> instance
+    def self.[]: (Integer messages_in, Integer messages_out, Integer bytes_in, Integer bytes_out, Integer reconnects) -> instance
+               | (messages_in: Integer, messages_out: Integer, bytes_in: Integer, bytes_out: Integer, reconnects: Integer) -> instance
+    def self.members: () -> [ :messages_in, :messages_out, :bytes_in, :bytes_out, :reconnects ]
+
+    def members: () -> [ :messages_in, :messages_out, :bytes_in, :bytes_out, :reconnects ]
+    def with: (?messages_in: Integer, ?messages_out: Integer, ?bytes_in: Integer, ?bytes_out: Integer, ?reconnects: Integer) -> instance
+    def to_h: () -> { messages_in: Integer, messages_out: Integer, bytes_in: Integer, bytes_out: Integer, reconnects: Integer }
+  end
+
+  class Counters
+    attr_accessor messages_in: Integer
+    attr_accessor messages_out: Integer
+    attr_accessor bytes_in: Integer
+    attr_accessor bytes_out: Integer
+    attr_accessor reconnects: Integer
+
+    def initialize: () -> void
+    def snapshot: () -> Stats
+  end
+end

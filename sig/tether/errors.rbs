@@ -1,5 +1,24 @@
 module Tether
   class Error < StandardError
+    def retryable?: () -> bool
+  end
+
+  class ConfigurationError < Error
+  end
+
+  class HeadersNotSupportedError < Error
+  end
+
+  class SubscriptionClosedError < Error
+  end
+
+  class ForkedError < Error
+  end
+
+  class HandlerError < Error
+    attr_reader msg: untyped
+
+    def initialize: (Exception cause, ?untyped msg) -> void
   end
 
   class ProtocolError < Error
@@ -29,7 +48,17 @@ module Tether
   class ConnectionDrainingError < ConnectionError
   end
 
-  class ConnectionReconnectingError < ConnectionError
+  class DisconnectedError < ConnectionError
+    def retryable?: () -> true
+  end
+
+  class ReconnectBufferFullError < ConnectionError
+  end
+
+  class TLSError < ConnectionError
+  end
+
+  class CredentialsError < ConnectionError
   end
 
   class NoServersError < ConnectionError

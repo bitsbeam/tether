@@ -1,0 +1,45 @@
+module Tether
+  module Connection
+    class Events
+      type name = :error | :connect | :disconnect | :reconnect | :reconnect_error | :close | :lame_duck | :servers_discovered | :status
+      type handler = ^(*untyped args) -> void
+
+      NAMES: Array[name]
+      QUEUE_LIMIT: Integer
+
+      class Registration
+        @list: Array[Registration]
+        @lock: Thread::Mutex
+        @handler: handler
+
+        def initialize: (Array[Registration] list, Thread::Mutex lock, handler handler) -> void
+        def cancel: () -> void
+        def call: (*untyped args) -> void
+      end
+
+      @logger: Options::_Logger?
+      @handlers: Hash[name, Array[Registration]]
+      @listeners: Array[Registration]
+      @lock: Thread::Mutex
+      @queue: Thread::Queue
+      @last_error: Exception?
+      @thread: Thread?
+
+      def initialize: (?logger: Options::_Logger?) -> void
+      def last_error: () -> Exception?
+      def on: (name name) { (*untyped args) -> void } -> Registration
+      def listen: () { (Symbol event, untyped detail) -> void } -> Registration
+      def notify: (Symbol event, ?untyped detail) -> void
+      def emit: (name name, *untyped args) -> void
+      def error: (Exception error) -> void
+      def shutdown: (?Deadline deadline) -> void
+      def reset: () -> void
+
+      private
+
+      def start_thread: () -> void
+      def deliver: (name name, Array[untyped] args) -> void
+      def log: (Exception? error) -> void
+    end
+  end
+end

@@ -1,32 +1,82 @@
 module Tether
   module Connection
     class Subscription
-      DEFAULT_MAX_PENDING: Integer
+      type state = :active | :draining | :closed
+      type outcome = :queued | :last | :slow | :dropped | :closed
 
       attr_reader sid: String
       attr_reader subject: String
-      attr_reader queue_group: String?
-      attr_reader delivered: Integer
-      attr_reader dropped: Integer
-      attr_reader responder: Client?
+      attr_reader queue: String?
+      attr_reader client: Client
 
-      @queue: Thread::SizedQueue
-      @on_slow_consumer: (^(Subscription) -> void)?
-      @callback: (^(Protocol::Msg) -> void)?
+      @max_pending: Integer
+      @max_pending_bytes: Integer
+      @max: Integer?
+      @block: (^(Protocol::Msg msg) -> void)?
       @lock: Thread::Mutex
-      @worker: Thread?
+      @messages: Thread::Queue
+      @finished: Thread::Queue
+      @close_handlers: Array[^() -> void]
+      @pending: Integer
+      @pending_bytes: Integer
+      @received: Integer
+      @delivered: Integer
+      @dropped: Integer
+      @state: state
+      @slow: bool
+      @error: Exception?
+      @workers: Array[Thread]
+      @running: Integer
 
-      def initialize: (sid: String, subject: String, ?queue_group: String?, ?max_pending: Integer, ?on_slow_consumer: (^(Subscription) -> void)?, ?responder: Client?) ?{ (Protocol::Msg) -> void } -> void
+      def initialize: (client: Client, sid: String, subject: String, max_pending: Integer, max_pending_bytes: Integer, ?queue: String?, ?max: Integer?, ?concurrency: Integer) ?{ (Protocol::Msg msg) -> void } -> void
       def deliver: (Protocol::Msg msg) -> bool
-      def next_message: (?Deadline deadline) -> Protocol::Msg
+      def next: (?timeout: timeout) -> Protocol::Msg
+      def each: (?idle_timeout: Numeric?) { (Protocol::Msg msg) -> void } -> self
+              | (?idle_timeout: Numeric?) -> Enumerator[Protocol::Msg, self]
+      def unsubscribe: (?after: Integer?) -> self
+      def drain: (?timeout: timeout) -> self
+      def start_drain: () -> bool
+      def finish_drain: (Deadline deadline) -> void
+      def close: (?Exception? error) -> void
+      def abandon: () -> void
+      def fail: (Exception error) -> void
+      def replay_frames: () -> String
+      def on_close: () { () -> void } -> self
       def pending: () -> Integer
+      def pending_bytes: () -> Integer
+      def delivered: () -> Integer
+      def dropped: () -> Integer
       def closed?: () -> bool
-      def close: () -> void
+      def draining?: () -> bool
+      def inspect: () -> String
 
       private
 
+      def admit: (Protocol::Msg msg) -> outcome
+      def overflow: () -> (:slow | :dropped)
+      def limit: (Integer count) -> bool
+      def account: (Protocol::Msg msg) -> Protocol::Msg
+      def finish_intake: () -> void
       def start_worker: () -> Thread
       def invoke: (Protocol::Msg msg) -> void
+      def finished: () -> void
+    end
+
+    class Resolver
+      attr_reader sid: String
+      attr_reader subject: String
+      attr_reader client: Client
+
+      @block: ^(Protocol::Msg msg) -> void
+      @closed: bool
+
+      def initialize: (client: Client, sid: String, subject: String) { (Protocol::Msg msg) -> void } -> void
+      def deliver: (Protocol::Msg msg) -> void
+      def unsubscribe: () -> void
+      def close: (?Exception? _error) -> void
+      alias abandon close
+      def closed?: () -> bool
+      def replay_frames: () -> String
     end
   end
 end

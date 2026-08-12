@@ -1,0 +1,19 @@
+module Tether
+  class Auth
+    type fields = Hash[Symbol, String]
+
+    @options: Options
+
+    def initialize: (Options options) -> void
+    def fields: (URI::Generic uri, String? nonce) -> fields
+
+    private
+
+    def from_url: (URI::Generic uri) -> fields
+    def simple: () -> fields
+    def jwt_and_seed: () -> [ String?, String? ]
+    def signed: (fields fields, String? seed, String? nonce) -> fields
+    def resolve: (Options::credential? value) -> String?
+    def read: (String? path) -> String?
+  end
+end

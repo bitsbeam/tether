@@ -1,4 +1,7 @@
 module Tether
+  # Whatever a caller may pass for a timeout: a deadline, a number of seconds, or nil for no limit.
+  type timeout = Deadline | Numeric | nil
+
   class Deadline
     NONE: nil
 
@@ -6,7 +9,7 @@ module Tether
 
     def self.after: (Numeric? seconds) -> Deadline
     def self.infinite: () -> Deadline
-    def self.coerce: (Deadline | Numeric | nil value) -> Deadline
+    def self.coerce: (timeout value) -> Deadline
     def self.now: () -> Float
 
     def initialize: (Float? at) -> void

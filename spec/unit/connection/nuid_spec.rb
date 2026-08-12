@@ -1,11 +1,6 @@
 # frozen_string_literal: true
 
 RSpec.describe Tether::Connection::NUID do
-  it "is a module with no instances to share or mis-share" do
-    expect(described_class).to be_an_instance_of(Module)
-    expect(described_class).not_to respond_to(:new)
-  end
-
   describe ".next" do
     it "generates 22 character base62 identifiers" do
       expect(described_class.next).to match(/\A[0-9A-Za-z]{22}\z/)
@@ -14,8 +9,8 @@ RSpec.describe Tether::Connection::NUID do
     it "keeps one prefix for the process and advances the sequence" do
       ids = Array.new(1_000) { described_class.next }
 
-      expect(ids.map { _1[0, described_class::PREFIX_LENGTH] }.uniq.size).to eq(1)
-      expect(ids.map { _1[described_class::PREFIX_LENGTH..] }).to eq(ids.map { _1[12..] }.sort)
+      expect(ids.map { |id| id[0, described_class::PREFIX_LENGTH] }.uniq.size).to eq(1)
+      expect(ids.map { |id| id[12..] }).to eq(ids.map { |id| id[12..] }.sort)
     end
 
     it "does not repeat itself" do

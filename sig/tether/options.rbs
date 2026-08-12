@@ -1,0 +1,72 @@
+module Tether
+  class Options
+    # Anything that answers `error`, such as a Logger.
+    interface _Logger
+      def error: (String message) -> untyped
+    end
+
+    # A credential computed on every connect, so a rotated one is picked up.
+    interface _Source
+      def call: () -> String?
+    end
+
+    # Returns CONNECT's authentication fields for the nonce the server sent.
+    interface _AuthCallback
+      def call: (String? nonce) -> Hash[Symbol | String, String]
+    end
+
+    type credential = String | _Source
+    type settings = Hash[Symbol, untyped]
+
+    MEBIBYTE: Integer
+    DEFAULTS: settings
+    RECONNECT_DEFAULTS: settings
+    TLS_DEFAULTS: settings
+    WEBSOCKET_DEFAULTS: settings
+    AUTH_KEYS: Array[Symbol]
+
+    attr_reader reconnect: settings?
+    attr_reader tls: settings?
+    attr_reader websocket: settings
+
+    @values: settings
+
+    def initialize: (**untyped options) -> void
+
+    def name: () -> String?
+    def connect_timeout: () -> Numeric
+    def write_timeout: () -> Numeric
+    def retry_on_failed_connect: () -> bool
+    def randomize: () -> bool
+    def ignore_discovered_servers: () -> bool
+    def ping_interval: () -> Numeric?
+    def max_pings_out: () -> Integer
+    def echo: () -> bool
+    def inbox_prefix: () -> String
+    def max_pending: () -> Integer
+    def max_pending_bytes: () -> Integer
+    def drain_timeout: () -> Numeric?
+    def validate_subjects: () -> bool
+    def token: () -> credential?
+    def user: () -> credential?
+    def password: () -> credential?
+    def jwt: () -> credential?
+    def nkey_seed: () -> credential?
+    def nkey_seed_file: () -> String?
+    def credentials: () -> credential?
+    def credentials_file: () -> String?
+    def auth: () -> _AuthCallback?
+    def logger: () -> _Logger?
+
+    def reconnect?: () -> bool
+    def to_h: () -> settings
+
+    private
+
+    def nested: (untyped value, settings defaults, String name) -> settings?
+    def reject_unknown: (settings given, settings known, String kind) -> void
+    def validate: () -> void
+    def positive: (*Symbol keys) -> void
+    def validate_auth: () -> void
+  end
+end

@@ -52,6 +52,16 @@ module Tether
         headers&.status
       end
 
+      # @return [String, nil] the text after the status code on the version line
+      def description
+        headers&.description
+      end
+
+      # @return [Integer] bytes of headers and payload together, which is what the server counts
+      def size
+        @data.bytesize + (@header_bytes ? @header_bytes.bytesize : 0)
+      end
+
       # True on the empty 503 the server sends back when a request reaches a
       # subject with no subscribers.
       #
@@ -69,7 +79,7 @@ module Tether
       def respond(payload = nil, headers: nil)
         raise Error, "message on #{@subject} has no reply subject" unless @reply_to
 
-        responder = @subscription&.responder
+        responder = @subscription&.client
         raise Error, "message on #{@subject} is not attached to a connection" unless responder
 
         responder.publish(@reply_to, payload, headers: headers)

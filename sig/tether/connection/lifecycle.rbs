@@ -1,0 +1,72 @@
+module Tether
+  module Connection
+    class Lifecycle
+      type status = :disconnected | :connecting | :connected | :reconnecting | :draining | :closed
+      type establishment = :connect | :reconnect
+
+      CONNECT_ERRORS: Array[singleton(Exception)]
+      AUTH_ERRORS: Array[singleton(ServerError)]
+
+      attr_reader status: status
+      attr_reader server_info: ServerInfo?
+      attr_reader server: Server?
+      attr_reader writer: Writer
+      attr_reader registry: Protocol::Registry
+      attr_reader events: Events
+      attr_reader timer: Timer
+      attr_reader pool: ServerPool
+      attr_reader counters: Counters
+      attr_reader pid: Integer
+
+      @options: Options
+      @handshake: Handshake
+      @fork_lock: Thread::Mutex
+      @lock: Thread::Mutex
+      @wakeup: Thread::Queue
+      @dispatcher: Protocol::Dispatcher
+      @keepalive: Keepalive
+      @transport: Transport?
+      @reader: Thread?
+      @drainer: Thread?
+
+      def initialize: (Client::urls urls, Options options) -> void
+      def connect: () -> void
+      def flush: (Deadline deadline) -> void
+      def connection_lost: (Transport? transport, ?Exception? error) -> void
+      def force_reconnect: () -> void
+      def drain: (Deadline deadline) -> void
+      def close: (?Exception? error) -> void
+      def check_fork: () -> void
+      def info_received: (Hash[String, untyped] info) -> void
+      def error_received: (Exception error) -> void
+      def pong_received: () -> void
+
+      private
+
+      def build: () -> void
+      def spawn: (String role) { () -> void } -> Thread
+      def change_status: (status status) -> void
+      def begin_connecting: () -> void
+      def try_each_server: () -> Exception?
+      def establish: (Server server, establishment event) -> true
+      def install: (Server server, Handshake::Result result, establishment event) -> true
+      def adopt: (Server server, Handshake::Result result) -> void
+      def start_reader: (Transport transport, Protocol::Parser parser) -> Thread
+      def read_loop: (Transport transport, Protocol::Parser parser) -> StandardError
+      def release_transport: () -> Thread?
+      def stale: () -> void
+      def discover: (ServerInfo info) -> void
+      def start_recovery: (Exception error) -> void
+      def recover: (Transport transport, Thread? reader, Exception? error) -> void
+      def reconnect_loop: () -> void
+      def next_server: () -> Server?
+      def try_reconnect: (Server server) -> bool
+      def pause: (Integer attempt) -> void
+      def begin_draining: () -> bool
+      def drain_subscriptions: (Deadline deadline) -> void
+      def begin_closing: () -> [ status, Transport?, Thread? ]?
+      def announce_close: (status previous, Exception? error) -> void
+      def reset_after_fork: () -> void
+    end
+  end
+end

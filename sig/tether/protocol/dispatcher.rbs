@@ -1,18 +1,12 @@
 module Tether
   module Protocol
     class Dispatcher
-      attr_reader registry: Registry
-      attr_reader errors: ErrorHolder
-      attr_reader server_info: Hash[String, untyped]?
+      @connection: Connection::Lifecycle
+      @registry: Registry
+      @writer: Connection::Writer
+      @counters: Counters
 
-      @connection: Client
-      @pongs: Array[Thread::SizedQueue]
-      @pong_lock: Thread::Mutex
-      @closed: bool
-
-      def initialize: (Client connection, ?registry: Registry, ?errors: ErrorHolder) -> void
-      def ping: (Deadline deadline) -> true
-      def close: () -> void
+      def initialize: (connection: Connection::Lifecycle, registry: Registry, writer: Connection::Writer, counters: Counters) -> void
 
       def on_msg: (String subject, String sid, String? reply_to, String? header_bytes, String payload) -> void
       def on_ping: () -> void
@@ -21,10 +15,6 @@ module Tether
       def on_info: (String json) -> void
       def on_error: (String description) -> void
       def on_protocol_error: (String message) -> void
-
-      private
-
-      def queue_ping: () -> Thread::SizedQueue
     end
   end
 end

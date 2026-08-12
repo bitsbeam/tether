@@ -3,37 +3,30 @@
 require "json"
 
 module Tether
-  # A connection to a NATS server.
+  # A connection to a NATS server or cluster.
   #
-  # One reader thread parses the socket and enqueues to subscriptions; each
-  # subscription runs its callback on its own worker. Writes take a lock that
-  # spans a whole frame. Nothing here uses `Timeout.timeout` or `Thread#raise`.
+  # One client is safe to use from any number of threads. A reader thread
+  # parses the socket and never runs user code; each subscription calls its
+  # block on its own worker; and every blocking call is bounded by a
+  # {Deadline}.
   class Client
-    DEFAULT_URI = "nats://127.0.0.1:4222"
-    DEFAULT_CONNECT_TIMEOUT = 2
-    DEFAULT_FLUSH_TIMEOUT = 10
+    DEFAULT_URL = "nats://127.0.0.1:4222"
     DEFAULT_REQUEST_TIMEOUT = 2
+    DEFAULT_FLUSH_TIMEOUT = 10
 
-    # @return [Symbol] :disconnected, :connected, or :closed
-    attr_reader :status
+    # @return [Options] the validated options this client was built with
+    attr_reader :options
 
-    # The socket this connection reads and writes. Exposed because the
-    # dispatcher answers PING from the reader thread.
+    # Connects and returns a client. With a block, yields the client and
+    # closes it afterwards.
     #
-    # @return [Connection::Transport, nil] nil until {#connect} has run
-    attr_reader :transport
-
-    # Connects and returns a client, yielding it and closing after if a block is given.
-    #
-    # Connects, and when a block is given yields the client and closes it after.
-    #
-    # @param uri [String, nil] the server to reach; defaults to NATS_URL, then nats://127.0.0.1:4222
-    # @param options [Hash{Symbol => Object}] CONNECT overrides, plus :connect_timeout and :max_pending
+    # @param urls [String, Array<String>, nil] one URL, a comma separated list, or an array;
+    #   defaults to NATS_URL, then nats://127.0.0.1:4222
+    # @param options [Hash{Symbol => Object}] see {Options::DEFAULTS}
     # @return [Client, Object] the client, or the block's value
-    # @raise [ConnectionError] if the server cannot be reached
-    def self.connect(uri = nil, **options)
-      client = new(uri, **options)
-      client.connect
+    # @raise [ConnectionError, ServerError, TimeoutError] if no server could be reached
+    def self.connect(urls = nil, **options)
+      client = new(urls, **options).connect
       return client unless block_given?
 
       begin
@@ -43,296 +36,405 @@ module Tether
       end
     end
 
-    # Builds a client without opening a socket. Call {#connect}, or use
-    # {.connect} to do both.
+    # Builds a client without connecting, so handlers can be registered first.
     #
-    # @param uri [String, nil] the server to reach; defaults to NATS_URL, then nats://127.0.0.1:4222
-    # @param options [Hash{Symbol => Object}] CONNECT fields to override, plus :connect_timeout and :max_pending
-    def initialize(uri = nil, **options)
-      @uri = uri || ENV.fetch("NATS_URL", DEFAULT_URI)
-      @options = options
-      @status = :disconnected
-      @sid_counter = 0
+    # @param urls [String, Array<String>, nil] one URL, a comma separated list, or an array
+    # @param options [Hash{Symbol => Object}] see {Options::DEFAULTS}
+    # @raise [ArgumentError] if an option is unknown or unusable
+    def initialize(urls = nil, **options)
+      @options = Options.new(**options)
+      @connection = Connection::Lifecycle.new(urls || ENV.fetch("NATS_URL", DEFAULT_URL), @options)
       @lock = Mutex.new
-      @flush_signal = Thread::SizedQueue.new(1)
+      @inbox = nil
+      @inbox_pid = nil
     end
 
-    # Opens the socket, exchanges INFO and CONNECT, and starts the reader.
+    # Connects to the first reachable server.
     #
-    # @param timeout [Numeric, nil] seconds allowed for the socket, the handshake, and the first flush
-    # @return [self] this client, connected
-    def connect(timeout: @options.fetch(:connect_timeout, DEFAULT_CONNECT_TIMEOUT))
-      deadline = Deadline.after(timeout)
-      @transport = Connection::Transport.connect(@uri, deadline: deadline)
-      read_server_info(deadline)
-      @transport.write(Protocol::Encoder.connect(connect_options), flush: true)
-      @status = :connected
-      start_reader
-      start_flusher
-      flush(timeout: deadline.remaining)
+    # @return [self] this client
+    # @raise [ConnectionError, ServerError, TimeoutError] if no server could be reached
+    def connect
+      @connection.connect
       self
     end
 
-    # Publishes a message.
-    #
-    # Fire and forget: the server sends no acknowledgement, so a successful
-    # return means the frame reached the socket, not that the server processed
-    # it. Follow with {#flush} when you need that guarantee.
+    # Publishes a message. Fire and forget: the server does not acknowledge it.
     #
     # @param subject [String] the subject to publish to
-    # @param payload [String, nil] the message body; nil sends an empty payload
-    # @param reply_to [String, nil] a subject a responder should send its answer to
-    # @param headers [Protocol::Headers, nil] headers to send alongside the payload
-    # @param flush [Boolean] send now rather than waiting for the flusher, for
-    #   a message with nothing to be batched alongside
-    # @return [void] nothing; the server does not acknowledge a publish
-    # @raise [MaxPayloadError] if the frame exceeds what the server advertised
+    # @param payload [String, nil] the body, sent as bytes; nil sends an empty message
+    # @param reply_to [String, nil] a subject a responder should answer on
+    # @param headers [Protocol::Headers, Hash, nil] headers to send with the message
+    # @param flush [Boolean] write now instead of waiting for the flusher
+    # @return [self] this client
+    # @raise [InvalidSubjectError] if the subject or reply cannot be published to
+    # @raise [MaxPayloadError] if headers and payload exceed the server's limit
+    # @raise [ReconnectBufferFullError, DisconnectedError] during an outage
+    # @raise [ConnectionClosedError] if the connection is closed
     def publish(subject, payload = nil, reply_to: nil, headers: nil, flush: false)
-      ensure_connected!
-      frame = if headers
-                Protocol::Encoder.hpub(subject, payload, headers, reply_to)
-              else
-                Protocol::Encoder.pub(subject, payload, reply_to)
-              end
-      check_payload_size!(subject, frame)
-      @transport.write(frame, flush: flush)
-      kick_flusher unless flush
-      nil
+      @connection.check_fork
+      check_subject(subject)
+      Protocol::Subject.check!(reply_to, "reply subject") if reply_to
+      @connection.writer.write(encode(subject, payload, reply_to, headers), flush: flush, messages: 1)
+      self
     end
 
-    # Subscribes, delivering to the block on a worker thread when one is given.
+    # Subscribes to a subject. With a block, messages are delivered to it on
+    # a worker thread; without one, take them with {Connection::Subscription#next}.
     #
-    # @param subject [String] the subject or wildcard pattern to receive on
-    # @param queue [String, nil] a queue group to join, so the server gives each
-    #   message to only one member
-    # @param max_pending [Integer] how many messages may queue before this counts as a slow consumer
-    # @return [Connection::Subscription] the subscription, which the caller keeps in order to cancel it
-    def subscribe(subject, queue: nil, max_pending: Connection::Subscription::DEFAULT_MAX_PENDING, &callback)
-      ensure_connected!
-      subscription = Connection::Subscription.new(
-        sid: next_sid, subject: subject, queue_group: queue, max_pending: max_pending,
-        on_slow_consumer: method(:report_slow_consumer), responder: self, &callback
-      )
-      dispatcher.registry.add(subscription)
-      @transport.write(Protocol::Encoder.sub(subject, subscription.sid, queue: queue))
-      kick_flusher
-      subscription
-    end
-
-    # Cancels a subscription.
-    #
-    # With max_msgs the server keeps delivering until that many more messages
-    # have arrived, so the subscription stays registered and its worker keeps
-    # running until then.
-    #
-    # @param subscription [Connection::Subscription] the subscription to cancel
-    # @param max_msgs [Integer, nil] unsubscribe only after this many more messages
-    # @return [void] nothing
-    def unsubscribe(subscription, max_msgs = nil)
-      unless @transport.closed?
-        @transport.write(Protocol::Encoder.unsub(subscription.sid, max_msgs))
-        kick_flusher
-      end
-      return if max_msgs
-
-      dispatcher.registry.remove(subscription.sid)
-      subscription.close
-      nil
+    # @param subject [String] the subject or wildcard pattern
+    # @param queue [String, nil] a queue group, so each message goes to one member
+    # @param max [Integer, nil] end the subscription after this many messages
+    # @param max_pending [Integer, nil] messages that may wait before newer ones are dropped
+    # @param max_pending_bytes [Integer, nil] bytes that may wait before newer messages are dropped
+    # @param concurrency [Integer] worker threads for the block; more than one gives up ordering
+    # @yieldparam msg [Protocol::Msg] each message
+    # @return [Connection::Subscription] the subscription
+    # @raise [InvalidSubjectError] if the subject or queue is malformed
+    # @raise [ConnectionDrainingError, ConnectionClosedError] if the connection is ending
+    def subscribe(subject, queue: nil, max: nil, max_pending: nil, max_pending_bytes: nil, concurrency: 1, &block)
+      ensure_accepting
+      Protocol::Subject.pattern!(subject)
+      Protocol::Subject.check!(queue, "queue group") if queue
+      register(Connection::Subscription.new(
+                 client: self, sid: @connection.registry.next_sid, subject: subject, queue: queue, max: max,
+                 max_pending: max_pending || @options.max_pending,
+                 max_pending_bytes: max_pending_bytes || @options.max_pending_bytes, concurrency: concurrency, &block
+               ))
     end
 
     # Publishes a request and waits for the first reply.
     #
-    # Every request on a connection shares one inbox subscription; replies are
-    # demultiplexed in memory, so N concurrent requests cost one subscription.
+    # @param subject [String] the subject to send the request to
+    # @param payload [String, nil] the request body
+    # @param headers [Protocol::Headers, Hash, nil] headers to send with the request
+    # @param timeout [Numeric, Deadline, nil] how long to wait
+    # @return [Protocol::Msg] the first reply
+    # @raise [NoRespondersError] if nobody is subscribed to the subject
+    # @raise [TimeoutError] if no reply arrives in time
+    # @raise [DisconnectedError] if the connection is lost while waiting
+    def request(subject, payload = nil, headers: nil, timeout: DEFAULT_REQUEST_TIMEOUT)
+      @connection.check_fork
+      inbox.request(subject, payload, deadline: Deadline.coerce(timeout), headers: headers)
+    end
+
+    # Publishes a request and collects every reply until one of the limits is met.
     #
     # @param subject [String] the subject to send the request to
     # @param payload [String, nil] the request body
-    # @param timeout [Numeric, nil] seconds to wait for the first reply
-    # @param headers [Protocol::Headers, nil] headers to send with the request
-    # @return [Protocol::Msg] the first reply to arrive
-    # @raise [NoRespondersError] if nobody is subscribed to the subject
-    # @raise [TimeoutError] if no reply arrives in time
-    def request(subject, payload = nil, timeout: DEFAULT_REQUEST_TIMEOUT, headers: nil)
-      ensure_connected!
-      inbox.request(subject, payload, deadline: Deadline.after(timeout), headers: headers)
+    # @param headers [Protocol::Headers, Hash, nil] headers to send with the request
+    # @param max [Integer, nil] stop after this many replies
+    # @param stall [Numeric, nil] stop when no reply has arrived for this many seconds
+    # @param sentinel [#call, nil] stop when it returns true for a reply, which is not included
+    # @param timeout [Numeric, Deadline, nil] stop after this long
+    # @yieldparam msg [Protocol::Msg] each reply as it arrives, when a block is given
+    # @return [Array<Protocol::Msg>, Integer] the replies, or how many were yielded
+    # @raise [NoRespondersError] if nobody is subscribed and nothing was received
+    def request_many(subject, payload = nil, headers: nil, max: nil, stall: nil, sentinel: nil,
+                     timeout: DEFAULT_REQUEST_TIMEOUT, &block)
+      @connection.check_fork
+      replies = Thread::Queue.new
+      reply_to = new_inbox
+      resolver = resolver(reply_to) { |msg| replies.push(msg) }
+      publish(subject, payload, reply_to: reply_to, headers: headers, flush: true)
+      collect(replies, subject, Deadline.coerce(timeout), max: max, stall: stall, sentinel: sentinel, &block)
+    ensure
+      resolver&.unsubscribe
     end
 
-    # Builds a reply subject for a subscribe-then-publish exchange, which is
-    # what you want when a single request may draw several replies.
-    #
-    # @return [String] a fresh inbox subject, unrelated to the shared request inbox
-    def build_inbox_subject
-      "#{Connection::Inbox::INBOX_PREFIX}.#{Connection::NUID.next}"
+    # @return [String] a fresh, unique reply subject
+    def new_inbox
+      "#{@options.inbox_prefix}.#{Connection::NUID.next}"
     end
 
-    # Round trips a PING, which the server answers only after everything sent
-    # before it has been processed.
+    # Round trips a PING, which the server answers only after processing
+    # everything sent before it.
     #
-    # @param timeout [Numeric, nil] seconds to wait for the server's PONG
-    # @return [true] always true; it raises rather than returning false
+    # @param timeout [Numeric, Deadline, nil] how long to wait
+    # @return [self] this client
     # @raise [TimeoutError] if the server does not answer in time
+    # @raise [DisconnectedError] if there is no live connection
     def flush(timeout: DEFAULT_FLUSH_TIMEOUT)
-      ensure_connected!
-      dispatcher.ping(Deadline.after(timeout))
+      @connection.check_fork
+      @connection.flush(Deadline.coerce(timeout))
+      self
     end
 
-    # Closes the socket, which unblocks the reader's pending read so it can
-    # exit on its own. Nothing is killed: a thread stopped mid-parse would
-    # leave shared state in whatever shape the interrupt found it.
-    #
-    # @return [void] nothing
-    def close
-      return if @status == :closed
+    # @param timeout [Numeric, Deadline, nil] how long to wait
+    # @return [Float] seconds a round trip to the server takes
+    def rtt(timeout: DEFAULT_FLUSH_TIMEOUT)
+      started = Deadline.now
+      flush(timeout: timeout)
+      Deadline.now - started
+    end
 
-      @status = :closed
-      @inbox&.close
-      @flush_signal.close
-      @transport&.close
-      @reader.join(1) if @reader && @reader != Thread.current
-      @flusher&.join(1)
-      dispatcher.close
+    # Unsubscribes everything, lets handlers finish what was received, then
+    # closes. Called from a tether thread it starts the drain and returns.
+    #
+    # @param timeout [Numeric, Deadline, nil] how long to wait; defaults to `drain_timeout`
+    # @return [self] this client
+    # @raise [TimeoutError] if draining takes too long; the client is closed anyway
+    # @raise [DisconnectedError] if there is no live connection; the client is closed
+    def drain(timeout: nil)
+      deadline = Deadline.coerce(timeout || @options.drain_timeout)
+      if own_thread?
+        Thread.new { @connection.drain(deadline) }
+      else
+        @connection.drain(deadline)
+      end
+      self
+    end
+
+    # Closes the connection immediately. Idempotent.
+    #
+    # @return [self] this client
+    def close
+      @connection.close
+      self
+    end
+
+    # Drops the current socket and reconnects.
+    #
+    # @return [self] this client
+    def force_reconnect
+      @connection.force_reconnect
+      self
+    end
+
+    # Replaces a connection inherited across a fork now, instead of on the
+    # first call made in the child.
+    #
+    # @return [self] this client
+    def after_fork
+      @connection.check_fork
+      self
+    end
+
+    # @return [Symbol] :disconnected, :connecting, :connected, :reconnecting, :draining or :closed
+    def status = @connection.status
+
+    # @return [Boolean] whether there is a live, authenticated connection
+    def connected? = status == :connected
+
+    # @return [Boolean] whether the client is trying to re-establish its connection
+    def reconnecting? = status == :reconnecting
+
+    # @return [Boolean] whether {#drain} is in progress
+    def draining? = status == :draining
+
+    # @return [Boolean] whether the client is closed; a closed client is never reopened
+    def closed? = status == :closed
+
+    # @return [ServerInfo, nil] what the connected server announced
+    def server_info = @connection.server_info
+
+    # @return [Integer, nil] the largest headers plus payload the server accepts
+    def max_payload = server_info&.max_payload
+
+    # @return [Array<Connection::Server>] the servers this client may connect to
+    def servers = @connection.pool.to_a
+
+    # Replaces the server pool.
+    #
+    # @param urls [String, Array<String>] the new servers
+    # @return [void] nothing
+    def servers=(urls)
+      @connection.pool.replace(urls)
+    end
+
+    # @return [Stats] a snapshot of the traffic counters
+    def stats = @connection.counters.snapshot
+
+    # @return [Exception, nil] the most recent asynchronous error
+    def last_error = @connection.events.last_error
+
+    # Asks the server who this connection is authenticated as.
+    #
+    # @param timeout [Numeric, Deadline, nil] how long to wait
+    # @return [Hash{String => Object}] the account, user, permissions and expiry
+    def user_info(timeout: DEFAULT_REQUEST_TIMEOUT)
+      JSON.parse(request("$SYS.REQ.USER.INFO", timeout: timeout).data).fetch("data", {})
+    end
+
+    Connection::Events::NAMES.each do |event|
+      define_method(:"on_#{event}") { |&handler| @connection.events.on(event, &handler) }
+    end
+
+    # @!method on_error
+    #   Registers a handler for asynchronous errors.
+    #   @yieldparam error [Exception] the error
+    #   @return [Connection::Events::Registration] a handle whose `cancel` removes the handler
+    # @!method on_connect
+    #   @yieldparam server [Connection::Server] the server connected to
+    #   @return [Connection::Events::Registration] a handle whose `cancel` removes the handler
+    # @!method on_disconnect
+    #   @yieldparam error [Exception, nil] why the connection was lost; nil when requested
+    #   @return [Connection::Events::Registration] a handle whose `cancel` removes the handler
+    # @!method on_reconnect
+    #   @yieldparam server [Connection::Server] the server reconnected to
+    #   @return [Connection::Events::Registration] a handle whose `cancel` removes the handler
+    # @!method on_reconnect_error
+    #   @yieldparam error [Exception] why one attempt failed
+    #   @return [Connection::Events::Registration] a handle whose `cancel` removes the handler
+    # @!method on_close
+    #   @return [Connection::Events::Registration] a handle whose `cancel` removes the handler
+    # @!method on_lame_duck
+    #   @yieldparam server [Connection::Server] the server that is shutting down
+    #   @return [Connection::Events::Registration] a handle whose `cancel` removes the handler
+    # @!method on_servers_discovered
+    #   @yieldparam servers [Array<Connection::Server>] the servers that were added
+    #   @return [Connection::Events::Registration] a handle whose `cancel` removes the handler
+    # @!method on_status
+    #   @yieldparam status [Symbol] the new status
+    #   @return [Connection::Events::Registration] a handle whose `cancel` removes the handler
+
+    # Subscribes a block that runs on the reader thread. Internal seam for
+    # library components: the block must not block.
+    #
+    # @api private
+    # @param subject [String] the subject or pattern
+    # @yieldparam msg [Protocol::Msg] each message, on the reader thread
+    # @return [Connection::Resolver] the entry
+    def resolver(subject, &block)
+      ensure_accepting
+      register(Connection::Resolver.new(client: self, sid: @connection.registry.next_sid, subject: subject, &block))
+    end
+
+    # Registers a listener called synchronously on connection transitions.
+    # Internal seam for library components: the block must not block.
+    #
+    # @api private
+    # @yieldparam event [Symbol] :connect, :disconnect, :reconnect, :reconnect_error or :close
+    # @yieldparam detail [Object, nil] the error or server concerned
+    # @return [Connection::Events::Registration] a handle whose `cancel` removes the listener
+    def listen(&listener)
+      @connection.events.listen(&listener)
+    end
+
+    # @api private
+    # @return [Connection::Timer] the connection's timer
+    def timer = @connection.timer
+
+    # @api private
+    # @return [Integer] the process the current connection belongs to
+    def generation = @connection.pid
+
+    # Tells the server a subscription is over, or will be after a message count.
+    #
+    # @api private
+    # @param entry [Connection::Subscription, Connection::Resolver] the entry
+    # @param max [Integer, nil] deliver this many messages in total first
+    # @return [void] nothing
+    def unsubscribed(entry, max = nil)
+      @connection.registry.remove(entry.sid) unless max || (entry.is_a?(Connection::Subscription) && entry.draining?)
+      @connection.writer.write(Protocol::Encoder.unsub(entry.sid, max), control: true)
+      nil
+    rescue ConnectionClosedError
       nil
     end
 
-    # @return [Boolean] whether the handshake completed and the socket is live
-    def connected? = @status == :connected
-
-    # @return [Boolean] whether {#close} has run; a closed client cannot be reopened
-    def closed? = @status == :closed
-
-    # Registers a handler for errors that arrive outside any call.
-    #
-    # Errors are never raised into a caller's thread: they are recorded and
-    # passed here, on the reader thread.
-    #
-    # @yieldparam error [Exception] the error that arrived, on the reader thread
+    # @api private
+    # @param entry [Connection::Subscription, Connection::Resolver] the entry to stop routing to
     # @return [void] nothing
-    def on_error(&handler) = dispatcher.errors.subscribe(&handler)
+    def forget(entry)
+      @connection.registry.remove(entry.sid)
+      nil
+    end
 
-    # @return [Hash, nil] the INFO the server announced, replaced on every update
-    def server_info = dispatcher.server_info
+    # @api private
+    # @param subscription [Connection::Subscription] the subscription that dropped a message
+    # @return [void] nothing
+    def report_slow_consumer(subscription)
+      message = "slow consumer on #{subscription.subject}: messages are being dropped"
+      @connection.events.error(SlowConsumerError.new(message))
+    end
 
-    # @return [Exception, nil] the last error that arrived outside a call
-    def last_error = dispatcher.errors.last
+    # @api private
+    # @param error [Exception] what a user block raised
+    # @param msg [Object, nil] the message it was handling
+    # @return [void] nothing
+    def report_handler_error(error, msg = nil)
+      @connection.events.error(HandlerError.new(error, msg))
+    end
 
-    # Counts live subscriptions. Request/reply adds exactly one, however many
-    # requests are in flight.
-    #
-    # @return [Integer] subscriptions currently registered, including the shared request inbox
-    def subscription_count = dispatcher.registry.size
+    # @api private
+    # @param error [Exception] an asynchronous error to report
+    # @return [void] nothing
+    def report_error(error)
+      @connection.events.error(error)
+    end
 
-    # The ceiling the server advertised in INFO. {#publish} refuses anything
-    # larger rather than letting the server close the connection over it.
-    #
-    # @return [Integer] largest payload the server accepts
-    def max_payload = server_info&.fetch("max_payload", nil)
+    # @return [String] the status and server without internal state
+    def inspect
+      "#<Tether::Client status=#{status} server=#{@connection.server&.url.inspect}>"
+    end
 
     private
 
+    def register(entry)
+      @connection.registry.add(entry)
+      @connection.writer.write(entry.replay_frames, control: true)
+      entry
+    end
+
+    def ensure_accepting
+      @connection.check_fork
+      raise ConnectionClosedError, "connection is closed" if status == :closed
+      raise ConnectionDrainingError, "connection is draining" if status == :draining
+    end
+
+    def own_thread?
+      Thread.current.name.to_s.start_with?("tether:")
+    end
+
+    def check_subject(subject)
+      @options.validate_subjects ? Protocol::Subject.literal!(subject) : Protocol::Subject.check!(subject)
+    end
+
+    def encode(subject, payload, reply_to, headers)
+      if headers.nil? || headers.empty?
+        return check_size(subject,
+                          payload.to_s.bytesize) && Protocol::Encoder.pub(subject, payload, reply_to)
+      end
+
+      info = server_info
+      raise HeadersNotSupportedError, "the server does not support headers" if info && !info.headers?
+
+      block = (headers.is_a?(Protocol::Headers) ? headers : Protocol::Headers[headers]).to_wire
+      check_size(subject, block.bytesize + payload.to_s.bytesize)
+      Protocol::Encoder.hpub(subject, payload, block, reply_to)
+    end
+
+    def check_size(subject, size)
+      limit = max_payload
+      return true unless limit && size > limit
+
+      raise MaxPayloadError, "message for #{subject} is #{size} bytes; the server accepts #{limit}"
+    end
+
     def inbox
       @lock.synchronize do
-        @inbox ||= Connection::Inbox.new(
-          self, max_pending: @options.fetch(:max_pending, Connection::Subscription::DEFAULT_MAX_PENDING)
-        )
+        next @inbox if @inbox && @inbox_pid == @connection.pid
+
+        @inbox_pid = @connection.pid
+        @inbox = Connection::Inbox.new(self)
       end
     end
 
-    # The parser's dispatcher, and the registry of live subscriptions. Built on first
-    # use, which happens on the connecting thread before the reader starts.
-    #
-    # @return [Protocol::Dispatcher] the dispatcher for this connection
-    def dispatcher
-      @dispatcher ||= Protocol::Dispatcher.new(self)
-    end
+    def collect(replies, subject, deadline, max:, stall:, sentinel:)
+      collected = []
+      while (msg = replies.pop(timeout: stall ? deadline.with_at_most(stall).remaining : deadline.remaining))
+        break no_responders(subject, collected) if msg.no_responders?
+        break if sentinel&.call(msg)
 
-    # @return [Protocol::Parser] the parser fed by the reader thread
-    def parser
-      @parser ||= Protocol::Parser.new(dispatcher)
-    end
-
-    def read_server_info(deadline)
-      parser.feed(@transport.read(deadline)) until dispatcher.server_info
-      parser.max_payload = max_payload
-    end
-
-    def connect_options
-      allowed = @options.except(:connect_timeout, :max_pending)
-      allowed.merge(name: @options[:name] || "tether")
-    end
-
-    def start_reader
-      @reader = Thread.new do
-        Thread.current.name = "tether:reader"
-        read_loop
+        block_given? ? yield(msg) : nil
+        collected << msg
+        break if max && collected.size >= max
       end
+      block_given? ? collected.size : collected
     end
 
-    def start_flusher
-      @flusher = Thread.new do
-        Thread.current.name = "tether:flusher"
-        flush_loop
-      end
-    end
-
-    def flush_loop
-      while @flush_signal.pop
-        break if @status == :closed
-
-        @transport.flush
-      end
-    rescue ConnectionClosedError => e
-      dispatcher.errors.record(e) unless @status == :closed
-    end
-
-    # Non-blocking, and drops the kick when one is already pending: a million
-    # publishes must not become a million wakeups.
-    #
-    # The emptiness check is not redundant with the rescue below it. A
-    # non-blocking push onto a full queue raises, which is the common case once
-    # a kick is pending, and raising once per publish cost more than everything
-    # else in the write path put together: 440k msg/s with the exception,
-    # 713k with this check in front of it.
-    def kick_flusher
-      return unless @flush_signal.empty?
-
-      @flush_signal.push(true, true)
-    rescue ThreadError, ClosedQueueError
-      nil
-    end
-
-    def read_loop
-      until @transport.closed? || parser.broken?
-        data = @transport.read
-        break if data.nil?
-
-        parser.feed(data)
-      end
-    rescue ConnectionClosedError, TimeoutError => e
-      dispatcher.errors.record(e) unless @status == :closed
-    rescue StandardError => e
-      dispatcher.errors.record(e)
-    ensure
-      dispatcher.close
-    end
-
-    def next_sid
-      @lock.synchronize { (@sid_counter += 1).to_s }
-    end
-
-    def check_payload_size!(subject, frame)
-      limit = max_payload
-      return unless limit && frame.bytesize > limit
-
-      raise MaxPayloadError, "payload for #{subject} exceeds the server's max_payload of #{limit}"
-    end
-
-    def report_slow_consumer(subscription)
-      dispatcher.errors.record(SlowConsumerError.new("dropped a message on #{subscription.subject}"))
-    end
-
-    def ensure_connected!
-      raise ConnectionClosedError, "connection is closed" if @status == :closed
-      raise ConnectionError, "not connected" unless @status == :connected
+    def no_responders(subject, collected)
+      raise NoRespondersError, "no responders for #{subject}" if collected.empty?
     end
   end
 end

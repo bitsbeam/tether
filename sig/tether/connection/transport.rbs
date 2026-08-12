@@ -1,32 +1,35 @@
 module Tether
   module Connection
     class Transport
-      DEFAULT_PORT: Integer
+      type io = Socket | OpenSSL::SSL::SSLSocket
+      type direction = :readable | :writable
+
       READ_SIZE: Integer
-      BUFFER_LIMIT: Integer
 
       attr_reader uri: URI::Generic
 
       @socket: Socket?
-      @lock: Thread::Mutex
-      @buffer: String
+      @io: io?
+      @tls: bool
 
-      def self.connect: (String | URI::Generic uri, ?deadline: Deadline) -> Transport
+      def self.for: (URI::Generic uri, Options options) -> Transport
 
-      def initialize: (String | URI::Generic uri) -> void
-      def open: (?Deadline deadline) -> self
+      def initialize: (URI::Generic uri) -> void
+      def open: (Deadline deadline) -> self
+      def upgrade_to_tls: (OpenSSL::SSL::SSLContext context, String hostname, Deadline deadline) -> self
+      def tls?: () -> bool
       def read: (?Deadline deadline) -> String?
-      def write: (String frame, ?flush: bool) -> Integer
-      def flush: () -> Integer
-      def buffered: () -> Integer
+      def write: (String data, ?Deadline deadline) -> Integer
       def close: () -> void
+      def abandon: () -> void
       def closed?: () -> bool
 
       private
 
-      def flush_buffer: () -> Integer
-      def normalize: (String | URI::Generic uri) -> URI::Generic
-      def coerce_scheme: (String value) -> String
+      def label: () -> String
+      def negotiate: (OpenSSL::SSL::SSLSocket tls, Deadline deadline) -> void
+      def write_some: (io io, String chunk, Deadline deadline) -> Integer
+      def wait: (direction direction, Deadline deadline, String action) -> void
     end
   end
 end

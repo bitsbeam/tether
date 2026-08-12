@@ -1,0 +1,55 @@
+module Tether
+  module Connection
+    class Handshake
+      class Probe
+        attr_reader info: Hash[String, untyped]?
+        attr_reader error: Exception?
+
+        @pong: bool
+        @on_error: ServerError?
+        @on_protocol_error: ProtocolError?
+
+        def initialize: () -> void
+        def pong?: () -> bool
+        def on_info: (String json) -> void
+        def on_pong: () -> void
+        def on_error: (String description) -> void
+        def on_protocol_error: (String message) -> void
+        def on_ping: () -> void
+        def on_ok: () -> void
+        def on_msg: (*untyped) -> void
+      end
+
+      class Result < Data
+        attr_reader transport: Transport
+        attr_reader parser: Protocol::Parser
+        attr_reader info: ServerInfo
+
+        def self.new: (Transport transport, Protocol::Parser parser, ServerInfo info) -> instance
+                    | (transport: Transport, parser: Protocol::Parser, info: ServerInfo) -> instance
+        def self.[]: (Transport transport, Protocol::Parser parser, ServerInfo info) -> instance
+                   | (transport: Transport, parser: Protocol::Parser, info: ServerInfo) -> instance
+        def self.members: () -> [ :transport, :parser, :info ]
+
+        def members: () -> [ :transport, :parser, :info ]
+        def with: (?transport: Transport, ?parser: Protocol::Parser, ?info: ServerInfo) -> instance
+        def to_h: () -> { transport: Transport, parser: Protocol::Parser, info: ServerInfo }
+      end
+
+      @options: Options
+      @auth: Auth
+
+      def initialize: (Options options, Auth auth) -> void
+      def run: (Server server, Deadline deadline) -> Result
+
+      private
+
+      def negotiate: (Server server, Transport transport, Protocol::Parser parser, Probe probe, Deadline deadline) -> void
+      def tls_first?: (Transport transport) -> boolish
+      def secure: (Transport transport, String hostname, Deadline deadline) -> Transport
+      def upgrade: (Server server, Transport transport, Probe probe, String hostname, Deadline deadline) -> void
+      def greeting: (Server server, Transport transport, Hash[String, untyped] info) -> String
+      def read_until: (Transport transport, Protocol::Parser parser, Probe probe, Deadline deadline) { () -> boolish } -> void
+    end
+  end
+end

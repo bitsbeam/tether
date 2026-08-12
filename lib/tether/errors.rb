@@ -2,7 +2,43 @@
 
 module Tether
   # Base class for every error raised by tether.
-  class Error < StandardError; end
+  class Error < StandardError
+    # @return [Boolean] whether repeating the call may succeed without any change by the caller
+    def retryable?
+      false
+    end
+  end
+
+  # Raised when an option or argument is not something tether can act on.
+  class ConfigurationError < Error; end
+
+  # Raised when the server does not support message headers and a call needs them.
+  class HeadersNotSupportedError < Error; end
+
+  # Raised when a subscription is used after it ended.
+  class SubscriptionClosedError < Error; end
+
+  # Raised from an object that belonged to a connection inherited across a fork.
+  class ForkedError < Error; end
+
+  # Reported as an event when a user block raises. The message being handled
+  # and the original exception travel with it.
+  class HandlerError < Error
+    # @return [Object, nil] the message the block was handling
+    attr_reader :msg
+
+    # @return [Exception] what the block raised
+    attr_reader :cause
+
+    # @param cause [Exception] what the block raised
+    # @param msg [Object, nil] the message the block was handling
+    def initialize(cause, msg = nil)
+      @msg = msg
+      @cause = cause
+      super("handler raised #{cause.class}: #{cause.message}")
+      set_backtrace(cause.backtrace)
+    end
+  end
 
   # Raised when the server sends bytes that violate the client protocol.
   class ProtocolError < Error; end
@@ -31,8 +67,24 @@ module Tether
   # Raised when an operation is attempted on a connection that is draining.
   class ConnectionDrainingError < ConnectionError; end
 
-  # Raised when an operation cannot be served while reconnecting.
-  class ConnectionReconnectingError < ConnectionError; end
+  # Raised when the connection is lost while a call depends on it, or when a
+  # call needs a live connection during an outage.
+  class DisconnectedError < ConnectionError
+    # @return [Boolean] true: the same call may succeed once the client has reconnected
+    def retryable?
+      true
+    end
+  end
+
+  # Raised by a publish during an outage once the reconnect buffer is full.
+  class ReconnectBufferFullError < ConnectionError; end
+
+  # Raised when TLS is required by one side and unavailable on the other, or
+  # when the TLS handshake fails.
+  class TLSError < ConnectionError; end
+
+  # Raised when credentials cannot be read or decoded.
+  class CredentialsError < ConnectionError; end
 
   # Raised when no server in the pool could be reached.
   class NoServersError < ConnectionError; end

@@ -1,0 +1,45 @@
+module Tether
+  module Connection
+    class Server
+      attr_reader uri: URI::Generic
+      attr_accessor attempts: Integer
+      attr_accessor auth_failures: Integer
+      attr_accessor last_error: Exception?
+      attr_reader tls_hostname: String?
+
+      @discovered: bool
+
+      def initialize: (URI::Generic uri, ?discovered: bool, ?tls_hostname: String?) -> void
+      def discovered?: () -> bool
+      def url: () -> String
+      def inspect: () -> String
+    end
+
+    class ServerPool
+      DEFAULT_PORTS: Hash[String, Integer]
+      IP_ADDRESS: Regexp
+
+      @lock: Thread::Mutex
+      @randomize: bool
+      @max_attempts: Integer
+      @servers: Array[Server]
+
+      def initialize: (Client::urls? urls, ?randomize: bool, ?max_attempts: Integer) -> void
+      def to_a: () -> Array[Server]
+      def size: () -> Integer
+      def replace: (Client::urls urls) -> void
+      def next_server: () -> Server?
+      def connected: (Server server) -> void
+      def failed: (Server server, Exception error) -> void
+      def reset_attempts: () -> void
+      def discover: (Array[String] urls, Server from) -> Array[Server]
+
+      private
+
+      def build: (Client::urls? urls) -> Array[Server]
+      def parse: (String url, String default_scheme) -> URI::Generic
+      def same?: (URI::Generic left, URI::Generic right) -> bool
+      def discovered_server: (URI::Generic uri, Server from) -> Server
+    end
+  end
+end

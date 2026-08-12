@@ -51,7 +51,7 @@ RSpec.describe Tether::Deadline do
       expect(described_class.after(10).with_at_most(2).remaining).to eq(2.0)
     end
 
-    it "never widens a deadline" do
+    it "keeps a deadline that is already sooner" do
       expect(described_class.after(1).with_at_most(30).remaining).to eq(1.0)
     end
 
@@ -92,7 +92,63 @@ RSpec.describe Tether::Deadline do
     end
   end
 
-  it "is frozen so it cannot drift after being handed down a call stack" do
-    expect(described_class.after(1)).to be_frozen
+  describe ".infinite" do
+    it "builds a deadline that never expires" do
+      expect(described_class.infinite).to be_infinite
+    end
+  end
+
+  describe ".now" do
+    it "reads the monotonic clock" do
+      allow(described_class).to receive(:now).and_call_original
+
+      expect(described_class.now).to be_within(1).of(Process.clock_gettime(Process::CLOCK_MONOTONIC))
+    end
+  end
+
+  describe "#initialize" do
+    it "freezes the deadline so it cannot drift after being handed down a call stack" do
+      expect(described_class.new(clock + 1)).to be_frozen
+    end
+  end
+
+  describe "#infinite?" do
+    it "returns false for a deadline with an instant" do
+      expect(described_class.after(1)).not_to be_infinite
+    end
+  end
+
+  describe "#remaining" do
+    it "returns nil for an infinite deadline, which blocking primitives read as forever" do
+      expect(described_class.infinite.remaining).to be_nil
+    end
+
+    it "returns zero once the instant has passed" do
+      expect(described_class.new(clock - 1).remaining).to eq(0.0)
+    end
+  end
+
+  describe "#expired?" do
+    it "returns false while time remains" do
+      expect(described_class.after(1)).not_to be_expired
+    end
+
+    it "returns true at the instant itself" do
+      expect(described_class.new(clock)).to be_expired
+    end
+
+    it "returns false for an infinite deadline" do
+      expect(described_class.infinite).not_to be_expired
+    end
+  end
+
+  describe "#inspect" do
+    it "shows the time remaining" do
+      expect(described_class.after(1.5).inspect).to eq("#<Tether::Deadline remaining=1.500s>")
+    end
+
+    it "says when the deadline is infinite" do
+      expect(described_class.infinite.inspect).to eq("#<Tether::Deadline infinite>")
+    end
   end
 end

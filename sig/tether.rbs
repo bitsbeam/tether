@@ -1,0 +1,8 @@
+module Tether
+  def self.connect: (?(String | Array[String])? urls, **untyped options) -> Client
+                  | [T] (?(String | Array[String])? urls, **untyped options) { (Client) -> T } -> T
+
+  class Msg = Protocol::Msg
+  class Headers = Protocol::Headers
+  class Subscription = Connection::Subscription
+end

@@ -1,0 +1,18 @@
+module Tether
+  module Protocol
+    module Subject
+      UNSAFE: Regexp
+      WILDCARD_TOKEN: Regexp
+      NOT_LITERAL: Regexp
+
+      def self.check!: (String value, ?String kind) -> String
+      def self.literal!: (String value) -> String
+      def self.pattern!: (String value) -> String
+      def self.match?: (String pattern, String subject) -> bool
+
+      private
+
+      def self.empty_token?: (String text) -> bool
+    end
+  end
+end

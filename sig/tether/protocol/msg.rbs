@@ -4,16 +4,18 @@ module Tether
       attr_reader subject: String
       attr_reader data: String
       attr_reader reply_to: String?
-      attr_reader subscription: Connection::Subscription?
+      attr_reader subscription: Connection::entry?
 
       @header_bytes: String?
       @headers: Headers?
 
-      def initialize: (subject: String, data: String, ?reply_to: String?, ?header_bytes: String?, ?subscription: Connection::Subscription?) -> void
+      def initialize: (subject: String, data: String, ?reply_to: String?, ?header_bytes: String?, ?subscription: Connection::entry?) -> void
       def headers: () -> Headers?
       def status: () -> Integer?
+      def description: () -> String?
+      def size: () -> Integer
       def no_responders?: () -> bool
-      def respond: (?String? payload, ?headers: Headers?) -> void
+      def respond: (?String? payload, ?headers: Client::headers?) -> Client
       def empty?: () -> bool
       def inspect: () -> String
     end

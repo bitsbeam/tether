@@ -11,7 +11,7 @@ RuboCop::RakeTask.new
 
 desc "Validate RBS signatures"
 task :rbs do
-  sh "rbs -I sig -r uri -r socket validate"
+  sh "rbs -I sig -r uri -r socket -r openssl -r zlib validate"
 end
 
 task default: %i[spec rubocop rbs]

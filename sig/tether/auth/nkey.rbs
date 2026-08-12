@@ -1,0 +1,20 @@
+module Tether
+  class Auth
+    class NKey
+      ALPHABET: String
+      SEED_PREFIX: Integer
+      PKCS8_PREFIX: String
+
+      attr_reader public_key: String
+
+      @key: OpenSSL::PKey::PKey
+
+      def self.decode: (String text) -> String
+      def self.encode: (String bytes) -> String
+      def self.crc16: (String bytes) -> Integer
+
+      def initialize: (String seed) -> void
+      def sign: (String data) -> String
+    end
+  end
+end

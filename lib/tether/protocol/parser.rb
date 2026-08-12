@@ -86,6 +86,9 @@ module Tether
       # @return [Integer, nil] largest frame accepted, from the server's INFO
       attr_accessor :max_payload
 
+      # @return [Object] the receiver of parsed frames, replaced once the handshake is over
+      attr_writer :dispatcher
+
       # @param dispatcher [Object] receives the parsed frames
       # @param max_control_line [Integer] sanity bound on a single control line
       # @param max_payload [Integer, nil] reject a frame larger than the server

@@ -1,0 +1,12 @@
+module Tether
+  module Connection
+    module TLS
+      def self.context: (Options::settings settings) -> OpenSSL::SSL::SSLContext
+
+      private
+
+      def self.store: (Options::settings settings) -> OpenSSL::X509::Store
+      def self.identity: (OpenSSL::SSL::SSLContext context, Options::settings settings) -> void
+    end
+  end
+end

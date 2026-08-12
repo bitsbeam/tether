@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "socket"
+require "openssl"
 require "shellwords"
 require "English"
 
@@ -10,16 +11,19 @@ require "English"
 class NatsServer
   IMAGE = ENV.fetch("NATS_IMAGE", "nats:alpine")
   CONTAINER_PORT = 4222
+  CONFIG_PATH = "/nats.conf"
+  WEBSOCKET_PORT = 8080
 
   class DockerUnavailable < StandardError; end
 
-  attr_reader :port
+  attr_reader :port, :websocket_port
 
   # Yields a running server and removes it afterwards.
   #
   # @param config [String, nil] extra nats.conf directives
-  def self.run(config = nil)
-    server = new(config: config)
+  # @param options [Hash] see {#initialize}
+  def self.run(config = nil, **options)
+    server = new(config: config, **options)
     server.start
     yield server
   ensure
@@ -30,9 +34,24 @@ class NatsServer
     system("docker", "info", out: File::NULL, err: File::NULL)
   end
 
-  def initialize(config: nil)
+  # Containers are started without `--rm` so a killed server can be started
+  # again; whatever is still running when the process ends is removed here.
+  def self.running
+    @running ||= []
+  end
+
+  at_exit { running.dup.each(&:stop) }
+
+  # @param config [String, nil] extra nats.conf directives
+  # @param files [Hash{String => String}] files to create inside the container, by absolute path
+  # @param tls_first [Boolean] whether the server expects the TLS handshake before INFO
+  # @param websocket [Boolean] whether to publish container port 8080 for a `websocket {}` listener
+  def initialize(config: nil, files: {}, tls_first: false, websocket: false)
     @config = config
+    @files = files
+    @tls_first = tls_first
     @port = free_port
+    @websocket_port = free_port if websocket
     @name = "tether-spec-#{@port}"
   end
 
@@ -42,19 +61,67 @@ class NatsServer
     @id = `#{command}`.strip
     raise "could not start #{IMAGE}: #{@id}" unless $CHILD_STATUS&.success?
 
+    self.class.running << self
     wait_until_listening
     self
   end
 
+  # Removes the container.
   def stop
     return unless @id
 
-    system("docker", "rm", "-f", @name, out: File::NULL, err: File::NULL)
+    docker("rm", "-f", @name)
+    self.class.running.delete(self)
     @id = nil
+  end
+
+  # Kills the server process and keeps the container, so {#resume} brings it
+  # back on the same port.
+  def halt
+    docker("kill", @name)
+    self
+  end
+
+  def resume
+    docker("start", @name)
+    wait_until_listening
+    self
+  end
+
+  def restart
+    halt
+    resume
+  end
+
+  # Freezes the server process without closing its connections, so clients
+  # see silence instead of a disconnect, until {#unpause}.
+  def pause
+    docker("pause", @name)
+    self
+  end
+
+  def unpause
+    docker("unpause", @name)
+    self
+  end
+
+  # @param name [String] a signal nats-server understands, such as `ldm`
+  def signal(name)
+    docker("exec", @name, "nats-server", "--signal", "#{name}=1")
+    self
   end
 
   def uri
     "nats://127.0.0.1:#{@port}"
+  end
+
+  def tls_uri
+    "tls://127.0.0.1:#{@port}"
+  end
+
+  # @param scheme [String] `ws` or `wss`
+  def websocket_uri(scheme = "ws")
+    "#{scheme}://127.0.0.1:#{@websocket_port}"
   end
 
   def log
@@ -63,13 +130,24 @@ class NatsServer
 
   private
 
-  def command
-    base = ["docker", "run", "-d", "--rm", "--name", @name, "-p", "#{@port}:#{CONTAINER_PORT}"]
-    return Shellwords.join(base + [IMAGE]) unless @config
+  def docker(*arguments)
+    system("docker", *arguments, out: File::NULL, err: File::NULL)
+  end
 
-    # Written inside the container so no host path has to be shared with Docker.
-    script = "printf '%s' #{Shellwords.escape(config_body)} > /nats.conf && nats-server -c /nats.conf"
-    "#{Shellwords.join(base + ["--entrypoint", "sh", IMAGE, "-c", script])} 2>&1"
+  # The configuration is written inside the container so no host path has to
+  # be shared with Docker.
+  def command
+    base = ["docker", "run", "-d", "--name", @name, "-p", "#{@port}:#{CONTAINER_PORT}", "--entrypoint", "sh"]
+    base.insert(5, "-p", "#{@websocket_port}:#{WEBSOCKET_PORT}") if @websocket_port
+    "#{Shellwords.join(base + [IMAGE, "-c", script])} 2>&1"
+  end
+
+  def script
+    writes = @files.merge(CONFIG_PATH => config_body).map do |path, content|
+      "mkdir -p #{Shellwords.escape(File.dirname(path))} && " \
+        "printf '%s' #{Shellwords.escape(content)} > #{Shellwords.escape(path)}"
+    end
+    "#{writes.join(" && ")} && exec nats-server -c #{CONFIG_PATH}"
   end
 
   def config_body
@@ -90,13 +168,21 @@ class NatsServer
       begin
         socket = TCPSocket.new("127.0.0.1", @port)
         socket.timeout = 1
-        return if socket.readpartial(4096).start_with?("INFO ")
-      rescue Errno::ECONNREFUSED, Errno::ECONNRESET, Errno::EADDRNOTAVAIL, EOFError, IO::TimeoutError
+        return if greeting(socket).start_with?("INFO ")
+      rescue SystemCallError, EOFError, IO::TimeoutError, OpenSSL::SSL::SSLError
         nil
       ensure
         socket&.close
       end
     end
     raise "#{IMAGE} did not serve INFO within 30s:\n#{log}"
+  end
+
+  def greeting(socket)
+    return socket.readpartial(4096) unless @tls_first
+
+    context = OpenSSL::SSL::SSLContext.new
+    context.verify_mode = OpenSSL::SSL::VERIFY_NONE
+    OpenSSL::SSL::SSLSocket.new(socket, context).connect.readpartial(4096)
   end
 end

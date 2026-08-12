@@ -2,123 +2,398 @@
 
 module Tether
   module Connection
-    # One subscription, with its own bounded queue and worker thread.
+    # One subscription, with its own bounded queue and, when given a block,
+    # its own worker threads.
     #
-    # The reader thread only ever enqueues here, never runs the callback: a slow
-    # handler must not delay delivery to other subscriptions, and must not delay
-    # the PONG that keeps the connection from being dropped as stale.
+    # The reader thread only ever enqueues here. A slow block delays nothing
+    # but its own subscription.
     class Subscription
-      DEFAULT_MAX_PENDING = 65_536
-
       # @return [String] the token sent to the server and echoed back on every message
       attr_reader :sid
 
-      # @return [String] the token sent at subscribe time and echoed back on every message
+      # @return [String] the subject or pattern subscribed to
       attr_reader :subject
 
-      # @return [String, nil] the queue group this belongs to, if any
-      attr_reader :queue_group
+      # @return [String, nil] the queue group this belongs to
+      attr_reader :queue
 
-      # @return [Integer] messages delivered to this subscription
-      attr_reader :delivered
+      # @return [Client] the connection this subscription lives on
+      attr_reader :client
 
-      # @return [Integer] messages dropped because the queue was full
-      attr_reader :dropped
-
-      # @return [Client, nil] used by {Protocol::Msg#respond}
-      attr_reader :responder
-
-      # Starts a worker thread when a callback is given. Without one, messages
-      # queue up until {#next_message} takes them on the caller's thread.
-      #
-      # @param sid [String] the token the server will echo back on every message
-      # @param subject [String] the subject or pattern subscribed to
-      # @param queue_group [String, nil] the queue group to join, so the work is shared
-      # @param max_pending [Integer] queue depth before this is a slow consumer
-      # @param on_slow_consumer [Proc, nil] called with self when a message is dropped
-      # @param responder [Client, nil] lets {Protocol::Msg#respond} publish a reply
-      # @param callback [Proc, nil] when given, messages are delivered to it on a worker thread
-      def initialize(sid:, subject:, queue_group: nil, max_pending: DEFAULT_MAX_PENDING,
-                     on_slow_consumer: nil, responder: nil, &callback)
-        @responder = responder
+      # @param client [Client] the connection, used to unsubscribe, flush and report
+      # @param sid [String] the token the server echoes back
+      # @param subject [String] the subject or pattern
+      # @param queue [String, nil] the queue group to join
+      # @param max_pending [Integer] messages that may wait before newer ones are dropped
+      # @param max_pending_bytes [Integer] bytes that may wait before newer messages are dropped
+      # @param max [Integer, nil] end the subscription after this many messages
+      # @param concurrency [Integer] worker threads calling the block
+      # @yieldparam msg [Protocol::Msg] each message, on a worker thread
+      def initialize(client:, sid:, subject:, max_pending:, max_pending_bytes:, queue: nil, max: nil,
+                     concurrency: 1, &block)
+        @client = client
         @sid = sid
         @subject = subject
-        @queue_group = queue_group
-        @queue = Thread::SizedQueue.new(max_pending)
-        @on_slow_consumer = on_slow_consumer
-        @callback = callback
-        @delivered = 0
-        @dropped = 0
+        @queue = queue
+        @max_pending = max_pending
+        @max_pending_bytes = max_pending_bytes
+        @max = max
+        @block = block
         @lock = Mutex.new
-        @worker = start_worker if callback
+        @messages = Thread::Queue.new
+        @finished = Thread::Queue.new
+        @close_handlers = []
+        @pending = @pending_bytes = @received = @delivered = @dropped = 0
+        @state = :active
+        @slow = false
+        @error = nil
+        @workers = block ? Array.new(concurrency) { start_worker } : []
+        @running = @workers.size
       end
 
       # Enqueues a message. Called on the reader thread, so it never blocks.
       #
-      # @param msg [Protocol::Msg] the message to hand to the worker
+      # @param msg [Protocol::Msg] the message
       # @return [Boolean] false when the message was dropped
       def deliver(msg)
-        @queue.push(msg, true)
-        @lock.synchronize { @delivered += 1 }
-        true
-      rescue ThreadError
-        @lock.synchronize { @dropped += 1 }
-        @on_slow_consumer&.call(self)
-        false
-      rescue ClosedQueueError
-        false
+        outcome = @lock.synchronize { admit(msg) }
+        @client.report_slow_consumer(self) if outcome == :slow
+        finish_intake if outcome == :last
+        outcome != :slow && outcome != :closed
       end
 
-      # Takes the next message, for a subscription with no callback.
+      # Takes the next message, for a subscription without a block.
       #
-      # @param deadline [Deadline] how long to wait for a message
+      # @param timeout [Numeric, Deadline, nil] how long to wait; nil waits indefinitely
       # @return [Protocol::Msg] the next message
-      # @raise [TimeoutError] if the deadline passes first
-      def next_message(deadline = Deadline.infinite)
-        msg = @queue.pop(timeout: deadline.remaining)
-        raise TimeoutError, "no message on #{@subject} within the deadline" if msg.nil? && !@queue.closed?
-        raise ConnectionClosedError, "subscription on #{@subject} was closed" if msg.nil?
+      # @raise [TimeoutError] if nothing arrives in time
+      # @raise [SubscriptionClosedError] if the subscription has ended and nothing is left
+      def next(timeout: nil)
+        msg = @messages.pop(timeout: Deadline.coerce(timeout).remaining)
+        return account(msg) if msg
 
-        msg
+        raise @error if @error
+        raise SubscriptionClosedError, "subscription on #{@subject} is closed" if @messages.closed?
+
+        raise TimeoutError, "no message on #{@subject} within the deadline"
       end
 
-      # Depth of the queue between the reader thread and this subscription's
-      # worker. Growth here means the handler is not keeping up.
+      # Yields messages until the subscription ends.
       #
-      # @return [Integer] messages waiting to be handled
-      def pending
-        @queue.size
+      # @param idle_timeout [Numeric, nil] stop when nothing has arrived for this many seconds
+      # @yieldparam msg [Protocol::Msg] each message, on the calling thread
+      # @return [self, Enumerator] an enumerator when no block is given
+      def each(idle_timeout: nil)
+        return enum_for(:each, idle_timeout: idle_timeout) unless block_given?
+
+        while (msg = @messages.pop(timeout: idle_timeout))
+          yield account(msg)
+        end
+        self
       end
 
-      # @return [Boolean] whether delivery has stopped; a closed subscription never resumes
-      def closed?
-        @queue.closed?
-      end
-
-      # Stops delivery and lets the worker finish what it already took.
+      # Stops delivery. Messages still queued are discarded.
       #
+      # @param after [Integer, nil] end the subscription once it has received this many messages in total
+      # @return [self] this subscription
+      def unsubscribe(after: nil)
+        return self if closed?
+
+        if after && limit(after)
+          @client.unsubscribed(self, after)
+        else
+          @client.unsubscribed(self)
+          close
+        end
+        self
+      end
+
+      # Stops intake, lets everything already received be handled, then ends
+      # the subscription. Called from this subscription's own block it returns
+      # at once and the subscription ends when the block does.
+      #
+      # @param timeout [Numeric, Deadline, nil] how long to wait; defaults to the client's `drain_timeout`
+      # @return [self] this subscription
+      # @raise [TimeoutError] if the queue is not emptied in time; the subscription is closed anyway
+      def drain(timeout: nil)
+        deadline = Deadline.coerce(timeout || @client.options.drain_timeout)
+        return self unless start_drain
+
+        @client.flush(timeout: deadline)
+        finish_drain(deadline)
+        self
+      end
+
+      # Sends UNSUB and marks the subscription as draining.
+      #
+      # @api private
+      # @return [Boolean] false when it was not active
+      def start_drain
+        @lock.synchronize do
+          return false unless @state == :active
+
+          @state = :draining
+        end
+        @client.unsubscribed(self)
+        true
+      end
+
+      # Ends intake after the server has confirmed the UNSUB and waits for the
+      # workers to empty the queue.
+      #
+      # @api private
+      # @param deadline [Deadline] how long to wait
       # @return [void] nothing
-      def close
-        @queue.close
-        @worker&.join(1)
+      # @raise [TimeoutError] if the queue is not emptied in time
+      def finish_drain(deadline)
+        finish_intake
+        return if @workers.include?(Thread.current) || @workers.empty?
+        return if @finished.pop(timeout: deadline.remaining) || @finished.closed?
+
+        @lock.synchronize { @state = :closed }
+        @messages.clear
+        raise TimeoutError, "subscription on #{@subject} did not drain within the deadline"
+      end
+
+      # Ends the subscription without telling the server, discarding what is queued.
+      #
+      # @api private
+      # @param error [Exception, nil] why, when it was not requested
+      # @return [void] nothing
+      def close(error = nil)
+        @lock.synchronize do
+          return if @state == :closed
+
+          @state = :closed
+          @error ||= error
+        end
+        @client.forget(self)
+        @messages.clear
+        @messages.close
+        finished if @workers.empty?
         nil
+      end
+
+      # Ends the subscription in a forked child without running any callback.
+      #
+      # @api private
+      # @return [void] nothing
+      def abandon
+        @lock.synchronize { @state = :closed }
+        @close_handlers.clear
+        @messages.clear
+        @messages.close
+        nil
+      end
+
+      # Records an error the server reported for this subscription, raised by
+      # the next call to {#next}.
+      #
+      # @api private
+      # @param error [Exception] the error
+      # @return [void] nothing
+      def fail(error)
+        @lock.synchronize { @error = error }
+        nil
+      end
+
+      # @api private
+      # @return [String] the frames that restore this subscription on a new connection
+      def replay_frames
+        @lock.synchronize do
+          next "" unless @state == :active
+
+          frame = Protocol::Encoder.sub(@subject, @sid, queue: @queue)
+          @max ? frame + Protocol::Encoder.unsub(@sid, [@max - @received, 1].max) : frame
+        end
+      end
+
+      # Registers a block to call once the subscription has ended, on the
+      # thread that ends it. Called at once when it already has.
+      #
+      # @yield with no arguments
+      # @return [self] this subscription
+      def on_close(&handler)
+        run_now = @lock.synchronize do
+          @close_handlers << handler unless @finished.closed?
+          @finished.closed?
+        end
+        handler.call if run_now
+        self
+      end
+
+      # @return [Integer] messages waiting to be handled
+      def pending = @lock.synchronize { @pending }
+
+      # @return [Integer] bytes waiting to be handled
+      def pending_bytes = @lock.synchronize { @pending_bytes }
+
+      # @return [Integer] messages handed to the block or returned by {#next}
+      def delivered = @lock.synchronize { @delivered }
+
+      # @return [Integer] messages dropped because the queue was full
+      def dropped = @lock.synchronize { @dropped }
+
+      # @return [Boolean] whether the subscription has ended for any reason
+      def closed?
+        @state == :closed || @messages.closed?
+      end
+
+      # @return [Boolean] whether {#drain} is in progress
+      def draining?
+        @state == :draining
+      end
+
+      # @return [String] the subject and state without the queued messages
+      def inspect
+        "#<Tether::Subscription subject=#{@subject.inspect} sid=#{@sid} state=#{@state}>"
       end
 
       private
 
+      def admit(msg)
+        return :closed if @state == :closed || @messages.closed?
+        if @pending >= @max_pending || (@pending.positive? && @pending_bytes + msg.size > @max_pending_bytes)
+          return overflow
+        end
+
+        @pending += 1
+        @pending_bytes += msg.size
+        @received += 1
+        @messages.push(msg)
+        @max && @received >= @max ? :last : :queued
+      rescue ClosedQueueError
+        :closed
+      end
+
+      def overflow
+        @dropped += 1
+        return :dropped if @slow
+
+        @slow = true
+        :slow
+      end
+
+      def limit(count)
+        @lock.synchronize do
+          next false if @received >= count
+
+          @max = count
+          true
+        end
+      end
+
+      def account(msg)
+        @lock.synchronize do
+          @pending -= 1
+          @pending_bytes -= msg.size
+          @delivered += 1
+          @slow = false if @slow && @pending < @max_pending / 2
+        end
+        msg
+      end
+
+      def finish_intake
+        @client.forget(self)
+        @lock.synchronize { @state = :closed unless @state == :draining }
+        @messages.close
+        finished if @workers.empty?
+      end
+
       def start_worker
         Thread.new do
           Thread.current.name = "tether:sub:#{@subject}"
-          while (msg = @queue.pop)
-            invoke(msg)
+          while (msg = @messages.pop)
+            invoke(account(msg))
           end
+          finished if @lock.synchronize { (@running -= 1).zero? }
         end
       end
 
       def invoke(msg)
-        @callback.call(msg)
+        @block.call(msg)
       rescue StandardError => e
-        @on_slow_consumer.nil? ? warn("tether: subscription callback raised: #{e.class}: #{e.message}") : nil
+        @client.report_handler_error(e, msg)
+      end
+
+      def finished
+        handlers = @lock.synchronize do
+          next [] if @finished.closed?
+
+          @state = :closed
+          @finished.close
+          @close_handlers.dup
+        end
+        handlers.each do |handler|
+          handler.call
+        rescue StandardError => e
+          @client.report_handler_error(e)
+        end
+      end
+    end
+
+    # A registry entry with no queue and no worker: its block runs on the
+    # reader thread, so it must only do what cannot block. Library components
+    # use it so that user handlers can never starve them.
+    class Resolver
+      # @return [String] the token the server echoes back
+      attr_reader :sid
+
+      # @return [String] the subject subscribed to
+      attr_reader :subject
+
+      # @return [Client] the connection this entry lives on
+      attr_reader :client
+
+      # @param client [Client] the connection
+      # @param sid [String] the token the server echoes back
+      # @param subject [String] the subject or pattern
+      # @yieldparam msg [Protocol::Msg] each message, on the reader thread
+      def initialize(client:, sid:, subject:, &block)
+        @client = client
+        @sid = sid
+        @subject = subject
+        @block = block
+        @closed = false
+      end
+
+      # @param msg [Protocol::Msg] the message
+      # @return [void] nothing
+      def deliver(msg)
+        @block.call(msg) unless @closed
+        nil
+      rescue StandardError => e
+        @client.report_handler_error(e, msg)
+      end
+
+      # Stops delivery and tells the server.
+      #
+      # @return [void] nothing
+      def unsubscribe
+        return if @closed
+
+        @closed = true
+        @client.unsubscribed(self)
+        nil
+      end
+
+      # @api private
+      # @return [void] nothing
+      def close(_error = nil)
+        @closed = true
+        nil
+      end
+      alias abandon close
+
+      # @return [Boolean] whether delivery has stopped
+      def closed?
+        @closed
+      end
+
+      # @api private
+      # @return [String] the frame that restores this entry on a new connection
+      def replay_frames
+        @closed ? "" : Protocol::Encoder.sub(@subject, @sid)
       end
     end
   end
