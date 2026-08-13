@@ -1,0 +1,93 @@
+module Tether
+  module Connection
+    class WebSocket < Transport
+      GUID: String
+      HTTP_HEADER_LIMIT: Integer
+      HEADER_END: String
+      CONTINUATION: Integer
+      TEXT: Integer
+      BINARY: Integer
+      CLOSE: Integer
+      PING: Integer
+      PONG: Integer
+      FIN: Integer
+      RSV1: Integer
+      RESERVED: Integer
+      MASKED: Integer
+      CONTROL_LIMIT: Integer
+      NORMAL_CLOSURE: Integer
+      PROTOCOL_VIOLATION: Integer
+      NO_MASKING_HEADER: String
+      DEFLATE_OFFER: String
+      DEFLATE_TAIL: String
+      COMPRESSION_THRESHOLD: Integer
+      MAX_MESSAGE_SIZE: Integer
+
+      attr_reader close_code: Integer?
+      attr_reader close_reason: String?
+
+      @options: Options
+      @settings: Hash[Symbol, untyped]
+      @path: String
+      @headers: Hash[String, String]
+      @upgraded: bool
+      @masking: bool
+      @deflater: Zlib::Deflate?
+      @inflater: Zlib::Inflate?
+      @write_lock: Thread::Mutex
+      @control: Thread::Queue
+      @backlog: String
+      @close_sent: bool
+      @inbound: String
+      @partial: String
+      @in_message: bool
+      @compressed: bool
+      @eof: bool
+
+      def initialize: (URI::Generic uri, Options options) -> void
+      def open: (Deadline deadline) -> self
+      def upgrade_to_tls: (OpenSSL::SSL::SSLContext context, String hostname, Deadline deadline) -> self
+      def read: (?Deadline deadline) -> String?
+      def write: (String data, ?Deadline deadline) -> Integer
+      def close: () -> void
+
+      private
+
+      def binary: () -> String
+      def reset_inbound: () -> void
+      def request_path: () -> String
+      def request_headers: () -> Hash[String, String]
+      def encrypt: (Deadline deadline) -> self
+      def upgrade: (Deadline deadline) -> void
+      def transport_write: (String data, Deadline deadline) -> Integer
+      def transport_read: (Deadline deadline) -> String?
+      def upgrade_request: (String key) -> String
+      def read_response: (Deadline deadline) -> [String, Hash[String, String]]
+      def plausible?: (String response) -> bool
+      def refuse: (String response) -> bot
+      def refused: (String reason) -> bot
+      def header_field: (String line) -> [String, String]
+      def verify: (Hash[String, String] fields, String key) -> void
+      def negotiate_extensions: (Hash[String, String] fields) -> void
+      def requested_no_masking?: () -> bool
+      def messages: (String data, String out) -> String
+      def frame: (Integer opcode, String payload, ?compress: bool) -> String
+      def frame_header: (Integer first, Integer size) -> String
+      def mask: (String payload, String key) -> String
+      def deflate: (String payload) -> String
+      def inflate: (String message) -> String
+      def drain_frames: () -> String?
+      def parse_header: (Integer offset) -> [Integer, Integer, Integer]?
+      def consume: (Integer offset) -> void
+      def accept: (Integer first, String payload) -> String?
+      def start_message: (Integer first, Integer opcode) -> void
+      def control: (Integer first, Integer opcode, String payload) -> nil
+      def closing: (String payload) -> void
+      def violation: (String message) -> bot
+      def send_close: (Integer code) -> void
+      def queued_control: (String out) -> String
+      def flush_control: () -> void
+      def write_backlog: (String backlog) -> void
+    end
+  end
+end

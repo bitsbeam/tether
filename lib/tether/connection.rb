@@ -3,6 +3,7 @@
 require "tether/connection/nuid"
 require "tether/connection/transport"
 require "tether/connection/tls"
+require "tether/connection/websocket"
 require "tether/connection/writer"
 require "tether/connection/server_pool"
 require "tether/connection/timer"
