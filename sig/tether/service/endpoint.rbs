@@ -1,0 +1,38 @@
+module Tether
+  class Service
+    class Endpoint
+      INTERNAL_ERROR: Integer
+
+      attr_reader name: String
+      attr_reader subject: String
+      attr_reader queue_group: String?
+      attr_reader metadata: metadata
+      attr_reader subscription: Connection::Subscription?
+
+      @service: Service
+      @client: Client
+      @handler: ^(Request request) -> void
+      @lock: Thread::Mutex
+      @requests: Integer
+      @errors: Integer
+      @processing_time: Integer
+      @last_error: String
+
+      def initialize: (service: Service, name: String, subject: String, ?queue_group: String?, ?metadata: Hash[untyped, untyped]?) { (Request request) -> void } -> void
+      def start: () -> self
+      def info: () -> EndpointInfo
+      def stats: () -> EndpointStats
+      def reset: () -> void
+      def inspect: () -> String
+
+      private
+
+      def identity: () -> document
+      def handle: (Protocol::Msg msg) -> void
+      def invoke: (Request request) -> String?
+      def reject: (Request request, StandardError error) -> String
+      def record: (Integer elapsed, String? error) -> void
+      def clock: () -> Integer
+    end
+  end
+end

@@ -1,0 +1,25 @@
+module Tether
+  class Service
+    class Info < Response
+      attr_reader endpoints: Array[EndpointInfo]
+
+      def initialize: (document raw) -> void
+      def description: () -> String
+    end
+
+    class EndpointInfo
+      attr_reader raw: document
+
+      def initialize: (document raw) -> void
+      def name: () -> String?
+      def subject: () -> String?
+      def queue_group: () -> String?
+      def metadata: () -> metadata
+      def to_h: () -> document
+      def ==: (untyped other) -> bool
+      alias eql? ==
+      def hash: () -> Integer
+      def inspect: () -> String
+    end
+  end
+end

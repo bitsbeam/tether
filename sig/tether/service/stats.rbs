@@ -1,0 +1,26 @@
+module Tether
+  class Service
+    class Stats < Response
+      attr_reader endpoints: Array[EndpointStats]
+      attr_reader started: Time?
+
+      def initialize: (document raw) -> void
+
+      private
+
+      def parse_time: (String? text) -> Time?
+    end
+
+    class EndpointStats < EndpointInfo
+      NANOSECONDS: Float
+
+      def requests: () -> Integer
+      def errors: () -> Integer
+      def last_error: () -> String?
+      def processing_time: () -> Float
+      def average_processing_time: () -> Float
+      def data: () -> untyped
+      def inspect: () -> String
+    end
+  end
+end

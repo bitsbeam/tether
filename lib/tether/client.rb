@@ -255,6 +255,16 @@ module Tether
       JSON.parse(request("$SYS.REQ.USER.INFO", timeout: timeout).data).fetch("data", {})
     end
 
+    # The services side of this connection: add a service, or discover the
+    # ones running elsewhere.
+    #
+    # @param prefix [String] the discovery prefix, for services reached across an account import
+    # @return [Service::Registry] the entry point for adding and discovering services
+    # @raise [InvalidSubjectError] if the prefix is not a literal subject
+    def services(prefix: Service::DEFAULT_PREFIX)
+      Service::Registry.new(self, prefix: prefix)
+    end
+
     Connection::Events::NAMES.each do |event|
       define_method(:"on_#{event}") { |&handler| @connection.events.on(event, &handler) }
     end

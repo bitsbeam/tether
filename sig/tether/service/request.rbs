@@ -1,0 +1,25 @@
+module Tether
+  class Service
+    class Request < Protocol::Msg
+      attr_reader error: String?
+
+      @msg: Protocol::Msg
+      @client: Client
+      @responded: bool
+
+      def initialize: (Protocol::Msg msg, Client client) -> void
+      def headers: () -> Protocol::Headers?
+      def size: () -> Integer
+      def respond: (?String? payload, ?headers: Client::headers?) -> self
+      def respond_json: (untyped object, ?headers: Client::headers?) -> self
+      def respond_error: (Integer code, String description, ?String? data, ?headers: Client::headers?) -> self
+      def responded?: () -> bool
+      def inspect: () -> String
+
+      private
+
+      def deliver: (String? payload, Client::headers? headers) -> void
+      def publish: (String? payload, Client::headers? headers) -> void
+    end
+  end
+end

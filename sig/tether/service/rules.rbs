@@ -1,0 +1,16 @@
+module Tether
+  class Service
+    module Rules
+      NAME: Regexp
+      SUBJECT: Regexp
+      SEMVER: Regexp
+
+      def self.name!: (String value, String kind) -> String
+      def self.version!: (String value) -> String
+      def self.subject!: (String value, String kind) -> String
+      def self.group!: (String value) -> String
+      def self.queue: (queue own, String | false inherited) -> (String | false)
+      def self.metadata: (Hash[untyped, untyped]? value) -> metadata
+    end
+  end
+end

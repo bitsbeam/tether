@@ -1,0 +1,76 @@
+module Tether
+  class Service
+    class Error < Tether::Error
+    end
+
+    # Called with each endpoint when `STATS` is built; what it returns becomes that endpoint's `data`.
+    interface _StatsHandler
+      def call: (Endpoint endpoint) -> untyped
+    end
+
+    # Called once the service has stopped, with the error given to `stop`.
+    interface _StopHandler
+      def call: (Exception? error) -> void
+    end
+
+    type state = :running | :stopping | :stopped
+    type document = Hash[String, untyped]
+    type metadata = Hash[String, String]
+    type queue = String | false | nil
+
+    DEFAULT_PREFIX: String
+    DEFAULT_QUEUE: String
+    VERBS: Array[String]
+    TYPES: Hash[String, String]
+    ERROR_HEADER: String
+    ERROR_CODE_HEADER: String
+    STARTED_FORMAT: String
+
+    def self.control_subject: (String | Symbol verb, ?String? name, ?String? id, ?prefix: String) -> String
+    def self.error_headers: (Integer code, String description, ?Client::headers? headers) -> Protocol::Headers
+
+    attr_reader client: Client
+    attr_reader name: String
+    attr_reader id: String
+    attr_reader version: String
+    attr_reader description: String
+    attr_reader metadata: metadata
+    attr_reader prefix: String
+
+    @stats_handler: _StatsHandler?
+    @root: Group
+    @lock: Thread::Mutex
+    @state: state
+    @endpoints: Array[Endpoint]
+    @controls: Array[Connection::Subscription]
+    @stop_handlers: Array[_StopHandler]
+    @stop_error: Exception?
+    @started: String
+
+    def initialize: (Client client, name: String, version: String, ?description: String?, ?metadata: Hash[untyped, untyped]?, ?queue: queue, ?prefix: String, ?stats_handler: _StatsHandler?, ?on_stop: _StopHandler?) -> void
+    def start: () -> self
+    def endpoint: (String name, ?subject: String?, ?queue: queue, ?metadata: Hash[untyped, untyped]?) { (Request request) -> void } -> Endpoint
+    def group: (String name, ?queue: queue) -> Group
+    def endpoints: () -> Array[Endpoint]
+    def info: () -> Info
+    def stats: () -> Stats
+    def reset_stats: () -> self
+    def on_stop: () { (Exception? error) -> void } -> self
+    def stop: (?Exception? error, ?timeout: timeout) -> self
+    def stopped?: () -> bool
+    def add_endpoint: (Endpoint endpoint) -> Endpoint
+    def stats_data: (Endpoint endpoint) -> untyped
+    def inspect: () -> String
+
+    private
+
+    def now: () -> String
+    def control_subjects: (String verb) -> Array[String]
+    def answer: (String verb, Protocol::Msg msg) -> void
+    def document: (String verb) -> document
+    def drain: (Array[Connection::Subscription] subscriptions, Deadline deadline) -> Tether::Error?
+    def attempt: () { () -> void } -> Tether::Error?
+    def finish: (Exception? error) -> void
+    def notify: (_StopHandler handler, Exception? error) -> void
+  end
+end

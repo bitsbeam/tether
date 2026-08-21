@@ -1,0 +1,24 @@
+module Tether
+  class Service
+    class Response
+      def self.frozen_copy: (untyped value) -> untyped
+
+      attr_reader raw: document
+
+      def initialize: (document raw) -> void
+      def type: () -> String?
+      def name: () -> String?
+      def id: () -> String?
+      def version: () -> String?
+      def metadata: () -> metadata
+      def to_h: () -> document
+      def ==: (untyped other) -> bool
+      alias eql? ==
+      def hash: () -> Integer
+      def inspect: () -> String
+    end
+
+    class Ping < Response
+    end
+  end
+end

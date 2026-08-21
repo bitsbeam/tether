@@ -1,0 +1,21 @@
+module Tether
+  class Service
+    class Registry
+      attr_reader prefix: String
+
+      @client: Client
+
+      def initialize: (Client client, ?prefix: String) -> void
+      def add: (name: String, version: String, ?description: String?, ?metadata: Hash[untyped, untyped]?, ?queue: queue, ?stats_handler: _StatsHandler?, ?on_stop: _StopHandler?) -> Service
+      def ping: (?String? name, ?id: String?, ?max: Integer?, ?stall: Numeric?, ?timeout: timeout) -> Array[Ping]
+      def info: (?String? name, ?id: String?, ?max: Integer?, ?stall: Numeric?, ?timeout: timeout) -> Array[Info]
+      def stats: (?String? name, ?id: String?, ?max: Integer?, ?stall: Numeric?, ?timeout: timeout) -> Array[Stats]
+      def inspect: () -> String
+
+      private
+
+      def discover: (String verb, singleton(Response) type, String? name, String? id, max: Integer?, stall: Numeric?, deadline: Deadline) -> Array[untyped]
+      def decode: (Protocol::Msg reply, String subject) -> document
+    end
+  end
+end

@@ -60,6 +60,7 @@ module Tether
     def on_servers_discovered: () { (Array[Connection::Server] servers) -> void } -> registration
     def on_status: () { (Connection::Lifecycle::status status) -> void } -> registration
 
+    def services: (?prefix: String) -> Service::Registry
     def resolver: (String subject) { (Protocol::Msg msg) -> void } -> Connection::Resolver
     def listen: () { (Symbol event, untyped detail) -> void } -> registration
     def timer: () -> Connection::Timer
