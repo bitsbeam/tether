@@ -39,6 +39,7 @@ module Tether
     MAPPING: Hash[String, Symbol]
 
     def self.for: (String? description) -> ServerError
+    def self.fatal?: () -> bool
     def fatal?: () -> bool
   end
 
@@ -46,6 +47,9 @@ module Tether
   end
 
   class AuthenticationExpiredError < ServerError
+  end
+
+  class AuthenticationRevokedError < ServerError
   end
 
   class AuthenticationTimeoutError < ServerError
@@ -57,13 +61,19 @@ module Tether
   class MaxConnectionsError < ServerError
   end
 
+  class MaxAccountConnectionsError < ServerError
+  end
+
   class MaxPayloadViolationError < ServerError
   end
 
   class MaxControlLineError < ServerError
   end
 
-  class ServerInvalidSubjectError < ServerError
+  class NoRespondersRequiresHeadersError < ServerError
+  end
+
+  class ConnectionThrottledError < ServerError
   end
 
   class TLSRequiredError < ServerError
@@ -75,11 +85,26 @@ module Tether
   class UnknownProtocolError < ServerError
   end
 
-  class ServerSlowConsumerError < ServerError
-    def fatal?: () -> bool
+  class WrongPortError < ServerError
+  end
+
+  class ServerInvalidSubjectError < ServerError
+    def self.fatal?: () -> bool
+  end
+
+  class InvalidPublishSubjectError < ServerError
+    def self.fatal?: () -> bool
+  end
+
+  class FailedAccountRegistrationError < ServerError
+    def self.fatal?: () -> bool
+  end
+
+  class MaxSubscriptionsError < ServerError
+    def self.fatal?: () -> bool
   end
 
   class PermissionsViolationError < ServerError
-    def fatal?: () -> bool
+    def self.fatal?: () -> bool
   end
 end

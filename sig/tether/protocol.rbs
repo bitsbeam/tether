@@ -9,7 +9,7 @@ module Tether
     BINARY: Encoding
 
     interface _ParserSink
-      def on_msg: (String subject, Integer sid, String? reply_to, String? headers, String payload) -> void
+      def on_msg: (String subject, String sid, String? reply_to, String? headers, String payload) -> void
       def on_ping: () -> void
       def on_pong: () -> void
       def on_ok: () -> void

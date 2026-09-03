@@ -10,6 +10,24 @@ module Tether
     # write of that string, never around the pieces of it: frames from different
     # threads must not interleave on the wire.
     module Encoder
+      # The server seeds every connection with `verbose:true, pedantic:true,
+      # echo:true` and merges CONNECT into that struct, so an absent key keeps
+      # the server's default rather than clearing it. Omitting `verbose` alone
+      # makes the server acknowledge every PUB and SUB with `+OK`; omitting
+      # `headers` makes it rewrite HMSG as MSG with the header bytes cut off,
+      # which silently strips all JetStream metadata.
+      DEFAULT_CONNECT = {
+        verbose: false,
+        pedantic: false,
+        tls_required: false,
+        lang: "ruby",
+        version: Tether::VERSION,
+        protocol: 1,
+        echo: true,
+        headers: true,
+        no_responders: true
+      }.freeze
+
       class << self
         # Encodes a `PUB` frame.
         #
@@ -20,8 +38,7 @@ module Tether
         def pub(subject, payload = nil, reply_to = nil)
           body = binary(payload)
           frame = buffer(subject.bytesize + body.bytesize + 64)
-          frame << "PUB " << subject
-          frame << " " << reply_to if reply_to
+          write_head(frame, "PUB ", subject, reply_to)
           frame << " " << body.bytesize.to_s << CRLF
           frame << body << CRLF
         end
@@ -37,8 +54,7 @@ module Tether
           block = headers.is_a?(Headers) ? headers.to_wire : binary(headers)
           body = binary(payload)
           frame = buffer(subject.bytesize + block.bytesize + body.bytesize + 64)
-          frame << "HPUB " << subject
-          frame << " " << reply_to if reply_to
+          write_head(frame, "HPUB ", subject, reply_to)
           frame << " " << block.bytesize.to_s
           frame << " " << (block.bytesize + body.bytesize).to_s << CRLF
           frame << block << body << CRLF
@@ -52,8 +68,8 @@ module Tether
         # @return [String] binary encoded frame
         def sub(subject, sid, queue: nil)
           frame = buffer(subject.bytesize + 32)
-          frame << "SUB " << subject
-          frame << " " << queue if queue
+          frame << "SUB " << binary(subject)
+          frame << " " << binary(queue) if queue
           frame << " " << sid.to_s << CRLF
         end
 
@@ -69,17 +85,29 @@ module Tether
           frame << CRLF
         end
 
-        # Encodes a `CONNECT` frame.
+        # Encodes a `CONNECT` frame over {DEFAULT_CONNECT}.
         #
-        # @param options [Hash] the CONNECT payload
+        # @param options [Hash] overrides for the defaults
         # @return [String] binary encoded frame
-        def connect(options)
-          json = JSON.generate(options)
+        # @raise [ArgumentError] if no_responders is requested without headers
+        def connect(options = {})
+          payload = DEFAULT_CONNECT.merge(options)
+          if payload[:no_responders] && !payload[:headers]
+            raise ArgumentError, "no_responders requires headers; the server closes the connection otherwise"
+          end
+
+          json = JSON.generate(payload)
           frame = buffer(json.bytesize + 16)
           frame << "CONNECT " << json << CRLF
         end
 
         private
+
+        def write_head(frame, verb, subject, reply_to)
+          frame << verb << binary(subject)
+          frame << " " << binary(reply_to) if reply_to
+          frame
+        end
 
         def buffer(capacity)
           String.new(capacity: capacity, encoding: BINARY)
