@@ -1,0 +1,21 @@
+module Tether
+  class Deadline
+    NONE: nil
+
+    attr_reader at: Float?
+
+    def self.after: (Numeric? seconds) -> Deadline
+    def self.infinite: () -> Deadline
+    def self.coerce: (Deadline | Numeric | nil value) -> Deadline
+    def self.now: () -> Float
+
+    def initialize: (Float? at) -> void
+    def infinite?: () -> bool
+    def remaining: () -> Float?
+    def expired?: () -> bool
+    def check!: (?String? subject) -> void
+    def with_at_most: (Numeric? seconds) -> Deadline
+    def earliest: (Deadline other) -> Deadline
+    def inspect: () -> String
+  end
+end

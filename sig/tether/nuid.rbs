@@ -1,0 +1,21 @@
+module Tether
+  class NUID
+    DIGITS: String
+    BASE: Integer
+    PREFIX_LENGTH: Integer
+    SEQUENCE_LENGTH: Integer
+    TOTAL_LENGTH: Integer
+    MAX_SEQUENCE: Integer
+    MIN_INCREMENT: Integer
+    MAX_INCREMENT: Integer
+
+    def self.next: () -> String
+
+    def initialize: () -> void
+    def next: () -> String
+
+    private
+
+    def reseed!: () -> void
+  end
+end

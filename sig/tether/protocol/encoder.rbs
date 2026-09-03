@@ -1,0 +1,11 @@
+module Tether
+  module Protocol
+    module Encoder
+      def self.pub: (String subject, ?String? payload, ?String? reply_to) -> String
+      def self.hpub: (String subject, String? payload, Headers | String headers, ?String? reply_to) -> String
+      def self.sub: (String subject, Integer | String sid, ?queue: String?) -> String
+      def self.unsub: (Integer | String sid, ?Integer? max_msgs) -> String
+      def self.connect: (Hash[Symbol | String, untyped] options) -> String
+    end
+  end
+end

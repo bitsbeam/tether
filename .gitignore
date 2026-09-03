@@ -9,3 +9,6 @@
 
 # rspec failure tracking
 .rspec_status
+
+# a library should resolve against a range, not a pinned lock
+/Gemfile.lock
