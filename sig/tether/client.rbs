@@ -5,6 +5,7 @@ module Tether
     DEFAULT_URI: String
     DEFAULT_CONNECT_TIMEOUT: Integer
     DEFAULT_FLUSH_TIMEOUT: Integer
+    DEFAULT_REQUEST_TIMEOUT: Integer
 
     attr_reader server_info: Hash[String, untyped]?
     attr_reader status: Symbol
@@ -17,15 +18,19 @@ module Tether
     def publish: (String subject, ?String? payload, ?reply_to: String?, ?headers: Headers?) -> void
     def subscribe: (String subject, ?queue: String?, ?max_pending: Integer) ?{ (Msg) -> void } -> Subscription
     def unsubscribe: (Subscription subscription, ?Integer? max_msgs) -> void
+    def request: (String subject, ?String? payload, ?timeout: Numeric?, ?headers: Headers?) -> Msg
+    def new_inbox: () -> String
     def flush: (?timeout: Numeric?) -> bool
     def close: () -> void
     def connected?: () -> bool
     def closed?: () -> bool
     def on_error: () { (Exception) -> void } -> void
+    def subscription_count: () -> Integer
     def max_payload: () -> Integer?
 
     private
 
+    def inbox_mux: () -> InboxMux
     def build_dispatcher: () -> Dispatcher
     def read_server_info: (Deadline deadline) -> void
     def connect_options: () -> Hash[Symbol, untyped]

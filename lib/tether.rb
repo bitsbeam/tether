@@ -12,6 +12,7 @@ require_relative "tether/msg"
 require_relative "tether/transport"
 require_relative "tether/subscription"
 require_relative "tether/dispatcher"
+require_relative "tether/inbox_mux"
 require_relative "tether/client"
 
 # A NATS client for Ruby.
