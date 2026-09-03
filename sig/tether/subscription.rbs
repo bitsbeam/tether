@@ -9,8 +9,7 @@ module Tether
     attr_reader dropped: Integer
     attr_reader responder: Client?
 
-    def initialize: (sid: String, subject: String, ?queue_group: String?, ?max_pending: Integer,
-                     ?on_slow_consumer: (^(Subscription) -> void)?, ?responder: Client?) ?{ (Msg) -> void } -> void
+    def initialize: (sid: String, subject: String, ?queue_group: String?, ?max_pending: Integer, ?on_slow_consumer: (^(Subscription) -> void)?, ?responder: Client?) ?{ (Msg) -> void } -> void
     def deliver: (Msg msg) -> bool
     def next_message: (?Deadline deadline) -> Msg
     def pending: () -> Integer

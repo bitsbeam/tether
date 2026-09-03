@@ -18,6 +18,9 @@ module Tether
     # @return [Subscription, nil]
     attr_reader :subscription
 
+    # Built by the dispatcher on the reader thread, so it does no work beyond
+    # holding references.
+    #
     # @param subject [String]
     # @param data [String]
     # @param reply_to [String, nil]
@@ -31,18 +34,26 @@ module Tether
       @subscription = subscription
     end
 
+    # Parses the header block on first use, on whichever thread asks for it.
+    #
     # @return [Headers, nil] nil when the message arrived without a header block
+    # @raise [ProtocolError] if the block is malformed
     def headers
       return @headers if defined?(@headers)
 
       @headers = @header_bytes && Headers.parse(@header_bytes)
     end
 
+    # JetStream and no-responders both report through this rather than `-ERR`.
+    #
     # @return [Integer, nil] the status the server put on the header line
     def status
       headers&.status
     end
 
+    # True on the empty 503 the server sends back when a request reaches a
+    # subject with no subscribers.
+    #
     # @return [Boolean] whether the server reported that nobody is listening
     def no_responders?
       headers&.no_responders? || false
@@ -63,12 +74,15 @@ module Tether
       responder.publish(@reply_to, payload, headers: headers)
     end
 
-    # @return [Boolean] whether this carries a payload
+    # Status only frames, such as a heartbeat or a 503, carry no payload.
+    #
+    # @return [Boolean] whether this carries no payload
     def empty?
       @data.nil? || @data.empty?
     end
 
-    # @return [String]
+    # @return [String] reports the payload's size rather than its bytes, which
+    #   may be binary and large
     def inspect
       "#<Tether::Msg subject=#{@subject.inspect} reply_to=#{@reply_to.inspect} bytes=#{@data.bytesize}>"
     end

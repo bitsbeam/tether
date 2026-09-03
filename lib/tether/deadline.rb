@@ -40,18 +40,27 @@ module Tether
       after(value)
     end
 
+    # Reads the monotonic clock, which never jumps backwards when the system
+    # clock is adjusted.
+    #
     # @return [Float] the current monotonic clock reading
     def self.now
       Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
 
+    # Wraps an absolute monotonic instant. Prefer {.after}, which takes a
+    # duration.
+    #
     # @param at [Float, nil] a monotonic instant, or nil for a deadline that never expires
     def initialize(at)
       @at = at
       freeze
     end
 
-    # @return [Boolean] whether this deadline can ever expire
+    # An infinite deadline reports nil remaining, which every blocking
+    # primitive in Ruby already reads as "wait forever".
+    #
+    # @return [Boolean] whether this deadline can never expire
     def infinite?
       @at.nil?
     end
@@ -69,7 +78,7 @@ module Tether
       left.negative? ? 0.0 : left
     end
 
-    # @return [Boolean]
+    # @return [Boolean] whether the instant has passed; always false when infinite
     def expired?
       return false if infinite?
 
@@ -109,7 +118,8 @@ module Tether
       other.at < @at ? other : self
     end
 
-    # @return [String]
+    # @return [String] shows time remaining rather than the absolute instant,
+    #   which is meaningless out of context
     def inspect
       infinite? ? "#<Tether::Deadline infinite>" : format("#<Tether::Deadline remaining=%.3fs>", remaining)
     end

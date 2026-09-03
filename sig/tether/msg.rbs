@@ -5,8 +5,7 @@ module Tether
     attr_reader reply_to: String?
     attr_reader subscription: Subscription?
 
-    def initialize: (subject: String, data: String, ?reply_to: String?,
-                     ?header_bytes: String?, ?subscription: Subscription?) -> void
+    def initialize: (subject: String, data: String, ?reply_to: String?, ?header_bytes: String?, ?subscription: Subscription?) -> void
     def headers: () -> Headers?
     def status: () -> Integer?
     def no_responders?: () -> bool

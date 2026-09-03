@@ -82,9 +82,12 @@ module Tether
       new(entries: entries)
     end
 
+    # Builds a header set. Prefer {.[]} for the common case of a plain hash.
+    #
     # @param entries [Hash{String => String, Array<String>}] initial headers
     # @param status [Integer, nil]
     # @param description [String, nil]
+    # @raise [ArgumentError] if a key is not a token or a value spans lines
     def initialize(entries: {}, status: nil, description: nil)
       @entries = {}
       @status = status
@@ -124,24 +127,34 @@ module Tether
       self
     end
 
+    # Every value for a key. Note the server reads only the first: repeated
+    # keys are legal on the wire but its lookups stop at the first match.
+    #
     # @param key [String]
     # @return [Array<String>]
     def values(key)
       @entries.fetch(key, []).dup
     end
 
+    # Removes a key and all of its values.
+    #
     # @param key [String]
     # @return [Array<String>, nil] the removed values
     def delete(key)
       @entries.delete(key)
     end
 
+    # Matched exactly, including case.
+    #
     # @param key [String]
     # @return [Boolean]
     def key?(key)
       @entries.key?(key)
     end
 
+    # Yields each key once per value, so a repeated key is yielded repeatedly,
+    # which is how it is written to the wire.
+    #
     # @yieldparam key [String]
     # @yieldparam value [String]
     # @return [Enumerator, self]
@@ -152,16 +165,21 @@ module Tether
       self
     end
 
-    # @return [Array<String>]
+    # @return [Array<String>] each key once, however many values it carries
     def keys
       @entries.keys
     end
 
+    # A frame can carry a status with no headers at all, so this is not the
+    # same as having no header block.
+    #
     # @return [Boolean] whether there are no headers, status, or description
     def empty?
       @entries.empty? && @status.nil? && @description.nil?
     end
 
+    # Sent by the server only when the client asked for it in CONNECT.
+    #
     # @return [Boolean] whether the server reported that nobody is listening
     def no_responders?
       @status == NO_RESPONDERS
@@ -192,7 +210,7 @@ module Tether
       control? && @description.to_s.start_with?("Flow")
     end
 
-    # @return [Hash{String => Array<String>}]
+    # @return [Hash{String => Array<String>}] a copy; mutating it does not affect these headers
     def to_h
       @entries.transform_values(&:dup)
     end
@@ -207,7 +225,8 @@ module Tether
       out.force_encoding(Encoding::BINARY)
     end
 
-    # @return [String]
+    # @return [String] shows the status alongside the headers, since a status
+    #   only frame has no entries at all
     def inspect
       "#<Tether::Headers status=#{@status.inspect} #{to_h.inspect}>"
     end

@@ -9,3 +9,5 @@ gem "rspec", "~> 3.0"
 gem "rubocop", "~> 1.21"
 
 gemspec
+
+gem "yard", "~> 0.9"

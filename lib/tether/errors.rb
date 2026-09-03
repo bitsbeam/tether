@@ -96,7 +96,8 @@ module Tether
       true
     end
 
-    # @return [Boolean]
+    # @return [Boolean] whether the server is expected to close the connection
+    #   after this error; see {ServerError.fatal?} for why it is advisory
     def fatal?
       self.class.fatal?
     end
@@ -154,7 +155,8 @@ module Tether
   # The server does not close the connection for this error: its parser
   # deliberately swallows the error so a bad subject is not a parse failure.
   class ServerInvalidSubjectError < ServerError
-    # @return [Boolean]
+    # @return [Boolean] false: the server's parser deliberately swallows this so a bad
+    #   subject is not treated as a parse failure
     def self.fatal?
       false
     end
@@ -163,7 +165,7 @@ module Tether
   # Raised when a publish names a malformed subject, in pedantic mode.
   # The server does not close the connection for this error.
   class InvalidPublishSubjectError < ServerError
-    # @return [Boolean]
+    # @return [Boolean] false: the server returns without closing
     def self.fatal?
       false
     end
@@ -172,7 +174,7 @@ module Tether
   # Raised when the server fails to register the connection's account.
   # The server does not close the connection for this error.
   class FailedAccountRegistrationError < ServerError
-    # @return [Boolean]
+    # @return [Boolean] false: the server reports it and carries on
     def self.fatal?
       false
     end
@@ -184,7 +186,8 @@ module Tether
   # connection usable, but the account limit path sends the same text and then
   # closes. See {ServerError.fatal?}.
   class MaxSubscriptionsError < ServerError
-    # @return [Boolean]
+    # @return [Boolean] false for the ordinary over-limit SUB, but see {ServerError.fatal?}:
+    #   the account limit path sends the same text and then closes
     def self.fatal?
       false
     end
@@ -193,7 +196,7 @@ module Tether
   # Raised when publishing to or subscribing to a subject the user cannot access.
   # The server does not close the connection for any of its seven variants.
   class PermissionsViolationError < ServerError
-    # @return [Boolean]
+    # @return [Boolean] false for all seven variants the server can send
     def self.fatal?
       false
     end

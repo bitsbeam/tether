@@ -13,6 +13,8 @@ module Tether
     # @return [String] the subject prefix this connection's replies arrive on
     attr_reader :prefix
 
+    # Builds the mux without subscribing; {#start} runs on the first request.
+    #
     # @param client [Client]
     # @param prefix [String, nil] defaults to a fresh `_INBOX.<nuid>`
     # @param max_pending [Integer] queue depth for the shared inbox subscription
@@ -57,16 +59,25 @@ module Tether
       end
     end
 
+    # The inbox is subscribed lazily, on the first request, so a connection
+    # that never makes one costs nothing.
+    #
     # @return [Boolean] whether the shared inbox subscription exists yet
     def started?
       @lock.synchronize { !@subscription.nil? }
     end
 
+    # Should return to zero once requests settle; a number that only grows is
+    # a leak.
+    #
     # @return [Integer] requests currently waiting for a reply
     def pending
       @lock.synchronize { @pending.size }
     end
 
+    # Releases every waiting request, so callers blocked in {#request} raise
+    # rather than waiting out their deadlines.
+    #
     # @return [void]
     def close
       waiters = @lock.synchronize { @pending.values.tap { @pending.clear } }
