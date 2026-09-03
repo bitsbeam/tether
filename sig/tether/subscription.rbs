@@ -1,0 +1,24 @@
+module Tether
+  class Subscription
+    DEFAULT_MAX_PENDING: Integer
+
+    attr_reader sid: String
+    attr_reader subject: String
+    attr_reader queue_group: String?
+    attr_reader delivered: Integer
+    attr_reader dropped: Integer
+
+    def initialize: (sid: String, subject: String, ?queue_group: String?, ?max_pending: Integer,
+                     ?on_slow_consumer: (^(Subscription) -> void)?) ?{ (Msg) -> void } -> void
+    def deliver: (Msg msg) -> bool
+    def next_message: (?Deadline deadline) -> Msg
+    def pending: () -> Integer
+    def closed?: () -> bool
+    def close: () -> void
+
+    private
+
+    def start_worker: () -> Thread
+    def invoke: (Msg msg) -> void
+  end
+end
