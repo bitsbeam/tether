@@ -26,6 +26,7 @@ module Tether
     # - `on_protocol_error(message)`
     class Parser
       COMPACT_THRESHOLD = 64 * 1024
+      SHORT_REMAINDER = 1024
       SNIPPET_LIMIT = 64
 
       AWAITING_CONTROL_LINE = :control
@@ -36,13 +37,25 @@ module Tether
 
       CR = 13
       LF = 10
+      UPPER_M = 77
+      LOWER_M = 109
+      UPPER_H = 72
+      LOWER_H = 104
+      UPPER_P = 80
+      LOWER_P = 112
+      UPPER_I = 73
+      LOWER_I = 105
+      PLUS = 43
+      MINUS = 45
       UPPER_A = 65
       UPPER_Z = 90
       CASE_SHIFT = 32
-      private_constant :MSG_LINE, :HMSG_LINE, :CR, :LF, :UPPER_A, :UPPER_Z, :CASE_SHIFT
+      private_constant :MSG_LINE, :HMSG_LINE, :CR, :LF, :UPPER_A, :UPPER_Z, :CASE_SHIFT,
+                       :UPPER_M, :LOWER_M, :UPPER_H, :LOWER_H, :UPPER_P, :LOWER_P,
+                       :UPPER_I, :LOWER_I, :PLUS, :MINUS
 
       # @return [Symbol] :control or :payload
-      attr_reader :state
+      def state = @awaiting_payload ? AWAITING_PAYLOAD : AWAITING_CONTROL_LINE
 
       # @return [Integer, nil] largest frame accepted, from the server's INFO
       attr_accessor :max_payload
@@ -78,7 +91,7 @@ module Tether
       def reset!
         @buffer.clear
         @position = 0
-        @state = AWAITING_CONTROL_LINE
+        @awaiting_payload = false
         @broken = false
         clear_frame
       end
@@ -96,68 +109,123 @@ module Tether
       private
 
       def run
+        buffer = @buffer
+        sink = @sink
+        pos = @position
+        size = buffer.bytesize
+
         loop do
-          progressed = @state == AWAITING_CONTROL_LINE ? consume_control_line : consume_payload
-          break unless progressed
+          if @awaiting_payload
+            needed = @needed
+            break if size - pos < needed + CRLF_SIZE
+
+            unless buffer.getbyte(pos + needed) == CR && buffer.getbyte(pos + needed + 1) == LF
+              @position = pos
+              return fail_protocol!("payload not terminated by CRLF on #{@subject}")
+            end
+
+            if (header_size = @header_size)
+              sink.on_msg(@subject, @sid, @reply_to, buffer.byteslice(pos, header_size),
+                          buffer.byteslice(pos + header_size, needed - header_size))
+            else
+              sink.on_msg(@subject, @sid, @reply_to, nil, buffer.byteslice(pos, needed))
+            end
+            pos += needed + CRLF_SIZE
+            @awaiting_payload = false
+            next
+          end
+
+          line_end = buffer.index(CRLF, pos)
+          unless line_end
+            if size - pos > @max_control_line
+              @position = pos
+              return fail_protocol!("control line exceeds #{@max_control_line} bytes")
+            end
+            break
+          end
+
+          byte = buffer.getbyte(pos)
+          if [UPPER_M, LOWER_M].include?(byte)
+            unless buffer.index(MSG_LINE, pos)
+              @position = pos
+              return malformed(pos, line_end)
+            end
+
+            subject = ::Regexp.last_match(1)
+            sid = ::Regexp.last_match(2)
+            reply_to = ::Regexp.last_match(3)
+            header_size = nil
+            needed = ::Regexp.last_match(4).to_i
+          elsif [UPPER_H, LOWER_H].include?(byte)
+            unless buffer.index(HMSG_LINE, pos)
+              @position = pos
+              return malformed(pos, line_end)
+            end
+
+            subject = ::Regexp.last_match(1)
+            sid = ::Regexp.last_match(2)
+            reply_to = ::Regexp.last_match(3)
+            header_size = ::Regexp.last_match(4).to_i
+            needed = ::Regexp.last_match(5).to_i
+          else
+            @position = pos
+            return unless dispatch(pos, line_end)
+
+            pos = line_end + CRLF_SIZE
+            next
+          end
+
+          if (header_size && header_size > needed) || (@max_payload && needed > @max_payload)
+            @position = pos
+            return reject_sizes(subject, header_size, needed)
+          end
+
+          pos = line_end + CRLF_SIZE
+
+          # The payload is usually already buffered, in which case the frame is
+          # emitted straight from locals and never touches the object at all.
+          if size - pos >= needed + CRLF_SIZE
+            unless buffer.getbyte(pos + needed) == CR && buffer.getbyte(pos + needed + 1) == LF
+              @position = pos
+              return fail_protocol!("payload not terminated by CRLF on #{subject}")
+            end
+
+            if header_size
+              sink.on_msg(subject, sid, reply_to, buffer.byteslice(pos, header_size),
+                          buffer.byteslice(pos + header_size, needed - header_size))
+            else
+              sink.on_msg(subject, sid, reply_to, nil, buffer.byteslice(pos, needed))
+            end
+            pos += needed + CRLF_SIZE
+            next
+          end
+
+          @subject = subject
+          @sid = sid
+          @reply_to = reply_to
+          @header_size = header_size
+          @needed = needed
+          @awaiting_payload = true
         end
+
+        @position = pos
         compact
       end
 
-      def consume_control_line
-        matched = match_message_line
-        return matched unless matched.nil?
+      def reject_sizes(subject, header_size, needed)
+        return fail_protocol!("header size exceeds total size on #{subject}") if header_size && header_size > needed
 
-        line_end = @buffer.index(CRLF, @position)
-        unless line_end
-          fail_protocol!("control line exceeds #{@max_control_line} bytes") if pending_bytes > @max_control_line
-          return false
-        end
-
-        start = @position
-        @position = line_end + CRLF_SIZE
-        dispatch(start, line_end)
+        fail_protocol!("frame of #{needed} bytes exceeds max_payload #{@max_payload} on #{subject}")
       end
 
       def dispatch(start, line_end)
         case @buffer.getbyte(start)
-        when 77, 109, 72, 104 then malformed(start, line_end)
-        when 80, 112 then dispatch_ping_pong(start, line_end)
-        when 43 then dispatch_ok(start, line_end)
-        when 45 then dispatch_err(start, line_end)
-        when 73, 105 then dispatch_info(start, line_end)
+        when UPPER_P, LOWER_P then dispatch_ping_pong(start, line_end)
+        when PLUS then dispatch_ok(start, line_end)
+        when MINUS then dispatch_err(start, line_end)
+        when UPPER_I, LOWER_I then dispatch_info(start, line_end)
         else unknown_operation(start, line_end)
         end
-      end
-
-      def match_message_line
-        byte = @buffer.getbyte(@position)
-        pattern = case byte
-                  when 77, 109 then MSG_LINE
-                  when 72, 104 then HMSG_LINE
-                  end
-        return nil unless pattern
-
-        match = pattern.match(@buffer, @position)
-        return nil unless match
-
-        @position = match.end(0)
-        start_payload(match, pattern.equal?(HMSG_LINE))
-      end
-
-      def start_payload(match, headers)
-        @subject = match[1]
-        @sid = match[2]
-        @reply_to = match[3]
-        @header_size = headers ? match[4].to_i : nil
-        @needed = (headers ? match[5] : match[4]).to_i
-
-        return fail_protocol!("header size exceeds total size on #{@subject}") if @header_size && @header_size > @needed
-        if @max_payload && @needed > @max_payload
-          return fail_protocol!("frame of #{@needed} bytes exceeds max_payload #{@max_payload} on #{@subject}")
-        end
-
-        @state = AWAITING_PAYLOAD
-        true
       end
 
       def dispatch_ping_pong(start, line_end)
@@ -197,32 +265,6 @@ module Tether
         true
       end
 
-      def consume_payload
-        return false if pending_bytes < @needed + CRLF_SIZE
-
-        return fail_protocol!("payload not terminated by CRLF on #{@subject}") unless payload_terminated?
-
-        emit_message
-        @position += @needed + CRLF_SIZE
-        @state = AWAITING_CONTROL_LINE
-        clear_frame
-        true
-      end
-
-      def payload_terminated?
-        @buffer.getbyte(@position + @needed) == CR && @buffer.getbyte(@position + @needed + 1) == LF
-      end
-
-      def emit_message
-        if @header_size
-          headers = @buffer.byteslice(@position, @header_size)
-          payload = @buffer.byteslice(@position + @header_size, @needed - @header_size)
-          @sink.on_msg(@subject, @sid, @reply_to, headers, payload)
-        else
-          @sink.on_msg(@subject, @sid, @reply_to, nil, @buffer.byteslice(@position, @needed))
-        end
-      end
-
       def verb?(start, limit, verb)
         return false if limit - start < verb.bytesize
 
@@ -251,11 +293,18 @@ module Tether
         @header_size = nil
       end
 
+      # Draining the buffer in place is the common case. Otherwise the leftover
+      # is copied out whenever it is short, which keeps the append target small
+      # instead of letting it grow toward COMPACT_THRESHOLD across many reads;
+      # copying a few hundred bytes costs far less than appending into a buffer
+      # that has grown to tens of kilobytes. A long remainder, meaning a large
+      # frame still arriving, is left alone until the threshold.
       def compact
-        if @position >= @buffer.bytesize
+        remaining = @buffer.bytesize - @position
+        if remaining.zero?
           @buffer.clear
           @position = 0
-        elsif @position >= COMPACT_THRESHOLD
+        elsif @position >= COMPACT_THRESHOLD || (@position.positive? && remaining <= SHORT_REMAINDER)
           @buffer = @buffer.byteslice(@position..) || String.new(encoding: BINARY)
           @position = 0
         end
