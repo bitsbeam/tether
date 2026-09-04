@@ -1,0 +1,17 @@
+module Tether
+  class JetStream
+    class API
+      LEVEL_HEADER: String
+
+      attr_reader prefix: String
+      attr_reader client: Client
+      attr_reader timeout: Numeric
+
+      def initialize: (Client client, prefix: String, timeout: Numeric) -> void
+      def deadline: (Tether::timeout timeout) -> Deadline
+      def request: (String subject, ?(Hash[String, untyped] | String)? payload, ?timeout: Tether::timeout, ?level: Integer) -> Hash[String, untyped]
+      def pages: (String subject, String key, ?Hash[String, untyped] payload, ?timeout: Tether::timeout) -> Enumerator::Lazy[untyped, void]
+      def decode: (String data) -> Hash[String, untyped]
+    end
+  end
+end

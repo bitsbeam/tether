@@ -1,0 +1,48 @@
+module Tether
+  class JetStream
+    class Pull
+      class Buffer
+        BYTES_BATCH: Integer
+
+        type state = :running | :draining | :stopped
+        type request = { batch: Integer, max_bytes: Integer } | { batch: Integer }
+
+        attr_reader state: state
+
+        @bytes: bool
+        @batch: Integer
+        @limit: Integer
+        @threshold: Integer
+        @pending: Integer
+        @buffered: Integer
+        @full: bool
+        @messages: Array[Protocol::Msg]
+        @control: Array[Pull::event]
+        @posted: Hash[Symbol, bool]
+        @lock: Thread::Mutex
+        @changed: Thread::ConditionVariable
+
+        def initialize: (max_messages: Integer, ?max_bytes: Integer?, ?threshold: Integer?) -> void
+        def push: (Protocol::Msg msg) -> nil
+        def post: (Pull::event event, ?once: bool) -> nil
+        def correct: (Integer messages, Integer bytes, ?too_large: bool) -> (:refill | :stalled | nil)
+        def take: (Deadline deadline) -> (Pull::event | Protocol::Msg | :drained | :stopped | nil)
+        def refill: () -> request?
+        def reset: () -> nil
+        def add: (Integer messages) -> nil
+        def clear: () -> nil
+        def drain: () -> bool
+        def stop: () -> nil
+        def pause: (Deadline deadline) -> bool
+        def owed?: () -> bool
+        def size: () -> Integer
+
+        private
+
+        def take_control: () -> Pull::event
+        def take_message: () -> Protocol::Msg
+        def cost: (Protocol::Msg msg) -> Integer
+      end
+    end
+  end
+end

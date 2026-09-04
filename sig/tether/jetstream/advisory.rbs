@@ -1,0 +1,22 @@
+module Tether
+  class JetStream
+    class Advisory
+      PREFIX: String
+      KINDS: Hash[Symbol, String]
+
+      attr_reader type: String?
+      attr_reader subject: String
+      attr_reader data: Hash[String, untyped]
+
+      def self.subject_for: ((Symbol | String)? kind) -> String
+      def self.from_msg: (Protocol::Msg msg) -> Advisory
+
+      def initialize: (String subject, Hash[String, untyped] data) -> void
+      def []: (String | Symbol key) -> untyped
+      def id: () -> String?
+      def time: () -> Time?
+      def to_h: () -> Hash[String, untyped]
+      def inspect: () -> String
+    end
+  end
+end

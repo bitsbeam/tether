@@ -1,0 +1,52 @@
+module Tether
+  class JetStream
+    class Consumer
+      GROUP: Regexp
+      PULL_FIELDS: Array[Symbol]
+      NANOSECONDS: Integer
+
+      attr_reader name: String
+      attr_reader stream: String
+      attr_reader jetstream: JetStream
+      attr_reader cached_info: ConsumerInfo
+
+      @api: API
+      @subject: String
+      @pin_id: String?
+      @lock: Thread::Mutex
+
+      def initialize: (JetStream jetstream, ConsumerInfo info) -> void
+      def info: (?timeout: Tether::timeout) -> ConsumerInfo
+      def config: () -> ConsumerConfig
+      def push?: () -> bool
+      def pause_until: (Time time, ?timeout: Tether::timeout) -> ConsumerPause
+      def resume: (?timeout: Tether::timeout) -> ConsumerPause
+      def reset: (?sequence: Integer?, ?timeout: Tether::timeout) -> self
+      def unpin: (String | Symbol group, ?timeout: Tether::timeout) -> self
+      def step_down: (?timeout: Tether::timeout) -> bool
+      def delete: (?timeout: Tether::timeout) -> bool
+      def fetch: (Integer batch, ?timeout: Tether::timeout, ?max_bytes: Integer?, ?wait: bool, ?heartbeat: Numeric?, **untyped options) ?{ (Message message) -> void } -> Batch
+      def next: (?timeout: Tether::timeout) -> Message
+      def consume: (**untyped options) { (Message message) -> void } -> Pull
+      def messages: (**untyped options) -> Pull
+      def inspect: () -> String
+      def pin_id: () -> String?
+      def pin_id=: (String? id) -> String?
+      def wrap: (Protocol::Msg msg, ?pull: Pull?) -> Message
+      def check_pull: (Hash[Symbol, untyped] options) -> nil
+      def pull_request: (batch: Integer, ?expires: Numeric?, ?heartbeat: Numeric?, ?max_bytes: Integer?, ?no_wait: bool, **untyped options) -> String
+      def request_next: (String reply_to, ?flush: bool, **untyped fields) -> nil
+
+      private
+
+      def check_group: (untyped group) -> void
+      def nanoseconds: (Numeric seconds) -> Integer
+    end
+
+    class ConsumerPause < Schema
+      def paused: () -> bool?
+      def pause_until: () -> Time?
+      def pause_remaining: () -> Numeric?
+    end
+  end
+end

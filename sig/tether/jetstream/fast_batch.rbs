@@ -1,0 +1,74 @@
+module Tether
+  class JetStream
+    class FastBatch
+      class Failure < Data
+        attr_reader sequence: Integer
+        attr_reader error: APIError
+
+        def self.new: (sequence: Integer, error: APIError) -> Failure
+      end
+
+      SUFFIX: String
+      START: Integer
+      APPEND: Integer
+      END_OF_BATCH: Integer
+      PING: Integer
+      GAPS: Hash[Symbol, String]
+      MAX_FLOW: Integer
+      WINDOWS: Range[Integer]
+      PING_INTERVAL: Integer
+      API_LEVEL: Integer
+
+      attr_reader id: String
+      attr_reader size: Integer
+      attr_reader acknowledged: Integer
+      attr_reader errors: Array[Failure]
+      attr_reader gaps: Array[Range[Integer]]
+      attr_reader ack: PubAck?
+
+      @client: Client
+      @timeout: Numeric | Deadline
+      @gap: String
+      @flow: Integer
+      @windows: Integer
+      @lock: Thread::Mutex
+      @replies: Thread::Queue
+      @cadence: Integer?
+      @failure: Exception?
+      @ended: bool
+      @closed: bool
+      @subject: String?
+      @prefix: String?
+      @resolver: Connection::Resolver?
+      @listener: Connection::Events::Registration?
+
+      def self.open: (JetStream jetstream, timeout: Numeric | Deadline, ?gap: Symbol, ?flow: Integer, ?windows: Integer) { (FastBatch batch) -> void } -> PubAck?
+
+      def initialize: (JetStream jetstream, timeout: Numeric | Deadline, ?gap: Symbol, ?flow: Integer, ?windows: Integer) -> void
+      def publish: (String subject, ?String? payload, ?headers: Client::headers?, **untyped options) -> self
+      def commit: () -> PubAck?
+      def close: () -> void
+      def inspect: () -> String
+
+      private
+
+      def prepare: () -> void
+      def start: (String subject, String? payload, Protocol::Headers? headers, Deadline deadline) -> void
+      def append: (String subject, String? payload, Protocol::Headers? headers, Deadline deadline) -> void
+      def listen: () -> void
+      def interrupted: (Thread::Queue replies, Symbol event) -> void
+      def send_message: (String? subject, String? payload, Protocol::Headers? headers, Integer sequence, Integer operation, ?flush: bool) -> void
+      def drain: () -> void
+      def receive: (Deadline deadline) -> void
+      def check: (Deadline deadline) -> void
+      def conclude: (Deadline deadline) -> void
+      def handle: (Protocol::Msg | Exception reply) -> void
+      def unanswered: (Protocol::Msg reply) -> void
+      def acknowledge: (Hash[String, untyped] body) -> void
+      def missed: (Integer expected, Integer received) -> void
+      def failed: (Exception error) -> void
+      def refused: (Integer sequence, APIError error) -> void
+      def finish: (Hash[String, untyped] body) -> void
+    end
+  end
+end

@@ -1,0 +1,30 @@
+module Tether
+  class JetStream
+    class PubAck < Schema
+      def stream: () -> String?
+      def sequence: () -> Integer?
+      def domain: () -> String?
+      def duplicate: () -> bool?
+      def value: () -> String?
+      def batch_id: () -> String?
+      def count: () -> Integer?
+      def self.parse: (String data) -> PubAck
+
+      def duplicate?: () -> bool
+    end
+
+    module PublishHeaders
+      MSG_ID: String
+      EXPECTED: Hash[Symbol, String]
+      TTL: String
+      ROLLUP: String
+      ROLLUPS: Hash[Symbol, String]
+
+      def self.build: (?Client::headers? headers, ?msg_id: _ToS?, ?expect: Hash[Symbol, untyped]?, ?ttl: (Numeric | Symbol)?, ?rollup: Symbol?, ?schedule: Hash[Symbol, untyped]?, ?cancel_schedule: String?) -> Protocol::Headers?
+      def self.copy: (Client::headers? headers) -> Protocol::Headers
+      def self.duration: (Numeric seconds) -> String
+
+      private def self.expectations: (Protocol::Headers result, Hash[Symbol, untyped] expect) -> void
+    end
+  end
+end

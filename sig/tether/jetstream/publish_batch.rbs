@@ -1,0 +1,38 @@
+module Tether
+  class JetStream
+    class PublishBatch
+      ID: String
+      SEQUENCE: String
+      COMMIT: String
+      END_OF_BATCH: String
+      MAX_SIZE: Integer
+      API_LEVEL: Integer
+
+      attr_reader id: String
+      attr_reader size: Integer
+
+      @client: Client
+      @timeout: Numeric | Deadline
+      @subject: String?
+      @closed: bool
+      @lock: Thread::Mutex
+
+      def self.open: (JetStream jetstream, timeout: Numeric | Deadline) { (PublishBatch batch) -> void } -> PubAck?
+
+      def initialize: (JetStream jetstream, timeout: Numeric | Deadline) -> void
+      def publish: (String subject, ?String? payload, ?headers: Client::headers?, **untyped options) -> self
+      def commit: () -> PubAck?
+      def abandon: () -> void
+      def inspect: () -> String
+
+      private
+
+      def numbered: (Protocol::Headers? headers, Integer sequence) -> Protocol::Headers
+      def stage: (String subject, String? payload, Protocol::Headers headers) -> void
+      def start: (String subject, String? payload, Protocol::Headers headers) -> void
+      def request: (String subject, String? payload, Protocol::Headers headers) -> Protocol::Msg
+      def too_large: () -> BatchTooLargeError
+      def confirm: (PubAck ack) -> PubAck
+    end
+  end
+end

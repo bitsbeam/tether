@@ -1,0 +1,37 @@
+module Tether
+  class JetStream
+    class Snapshot
+      @client: Client
+      @api: API
+      @stream: String
+
+      def initialize: (JetStream jetstream, String stream) -> void
+      def run: (Hash[String, untyped] options, Tether::timeout timeout) { (String chunk) -> void } -> [ StreamConfig, StreamState ]
+
+      private
+
+      def receive: (Connection::Subscription chunks, Tether::timeout timeout) { (String chunk) -> void } -> void
+      def finish: (Protocol::Msg msg) -> void
+    end
+
+    class RestoreWriter
+      CHUNK_SIZE: Integer
+
+      @api: API
+      @subject: String
+      @timeout: Tether::timeout
+      @chunk_size: Integer
+      @buffer: String
+      @finished: bool
+
+      def initialize: (API api, String subject, Tether::timeout timeout) -> void
+      def write: (String bytes) -> Integer
+      alias << write
+      def finish: () -> Hash[String, untyped]
+
+      private
+
+      def upload: (String chunk) -> void
+    end
+  end
+end

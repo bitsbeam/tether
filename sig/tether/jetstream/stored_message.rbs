@@ -1,0 +1,22 @@
+module Tether
+  class JetStream
+    class StoredMessage
+      STREAM: String
+      SUBJECT: String
+      SEQUENCE: String
+      TIME: String
+
+      attr_reader subject: String
+      attr_reader sequence: Integer
+      attr_reader data: String
+      attr_reader headers: Protocol::Headers
+      attr_reader time: Time
+
+      def self.from_direct: (Protocol::Msg msg) -> StoredMessage
+      def self.from_api: (Hash[String, untyped] message) -> StoredMessage
+
+      def initialize: (subject: String, sequence: Integer, data: String, headers: Protocol::Headers, time: Time) -> void
+      def inspect: () -> String
+    end
+  end
+end

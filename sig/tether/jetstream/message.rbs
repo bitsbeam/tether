@@ -1,0 +1,61 @@
+module Tether
+  class JetStream
+    class Message
+      ACK: String
+      NAK: String
+      IN_PROGRESS: String
+      TERM: String
+      NEXT: String
+      ACK_PREFIX: String
+      MARKER_REASON: String
+      NANOSECONDS: Integer
+
+      class Metadata < Data
+        attr_reader stream: String
+        attr_reader consumer: String
+        attr_reader domain: String?
+        attr_reader stream_sequence: Integer
+        attr_reader consumer_sequence: Integer
+        attr_reader delivered: Integer
+        attr_reader pending: Integer
+        attr_reader time: Time
+
+        def self.new: (stream: String, consumer: String, domain: String?, stream_sequence: Integer, consumer_sequence: Integer, delivered: Integer, pending: Integer, time: Time) -> Metadata
+      end
+
+      @msg: Protocol::Msg
+      @client: Client
+      @acks: bool
+      @pull: Pull?
+      @state: Symbol
+      @lock: Thread::Mutex
+      @metadata: Metadata?
+
+      def initialize: (Protocol::Msg msg, Client client, ?acks: bool, ?pull: Pull?) -> void
+      def subject: () -> String
+      def data: () -> String
+      def headers: () -> Protocol::Headers?
+      def reply_to: () -> String?
+      def ack: (?next: Integer?) -> self
+      def ack_sync: (?timeout: Tether::timeout) -> self
+      def nak: (?delay: Numeric?) -> self
+      def in_progress: () -> self
+      def term: (?reason: String?) -> self
+      def acked?: () -> bool
+      def marker?: () -> bool
+      def marker_reason: () -> String?
+      def metadata: () -> Metadata
+      def inspect: () -> String
+
+      private
+
+      def terminal: () { () -> untyped } -> self
+      def settle: () { () -> untyped } -> void
+      def publish: (String payload, ?reply_to: String?) -> Client
+      def ack_subject: () -> String
+      def parse_metadata: () -> Metadata
+      def domain: (Array[String] tokens, Integer start) -> String?
+      def metadata_offset: (Integer count) -> Integer
+    end
+  end
+end

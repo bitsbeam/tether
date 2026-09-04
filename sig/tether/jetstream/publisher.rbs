@@ -1,0 +1,50 @@
+module Tether
+  class JetStream
+    class Publisher
+      DEFAULT_STALL: Float
+      WORKER: String
+
+      @client: Client
+      @max_pending: Integer
+      @ack_timeout: Numeric?
+      @wait_timeout: Numeric?
+      @lock: Thread::Mutex
+      @released: Thread::ConditionVariable
+      @idle: Thread::ConditionVariable
+      @handler: (^(PublishFuture future) -> void)?
+      @generation: Integer
+      @pending: Hash[String, PublishFuture]
+      @counter: Integer
+      @prefix: String?
+      @offset: Integer
+      @resolver: Connection::Resolver?
+      @listener: Connection::Events::Registration?
+      @expiry: Connection::Timer::Entry?
+      @reports: Thread::Queue
+      @worker: Thread?
+
+      def initialize: (Client client, max_pending: Integer, ?ack_timeout: Numeric?, ?wait_timeout: Numeric?) -> void
+      def publish: (String subject, String? payload, ?headers: Client::headers?, ?stall: Numeric | Deadline) -> PublishFuture
+      def pending: () -> Integer
+      def wait: (Deadline deadline) -> bool
+      def on_error: () { (PublishFuture future) -> void } -> void
+
+      private
+
+      def reset: () -> void
+      def orphan: () -> void
+      def work: () -> void
+      def start: () -> void
+      def register: (String subject, Deadline deadline) -> [PublishFuture, String]
+      def make_room: (String subject, Deadline deadline) -> void
+      def discard: (String token) -> void
+      def release: () -> void
+      def resolve: (Protocol::Msg msg) -> void
+      def expire: () -> void
+      def interrupted: (Symbol event) -> void
+      def fail_all: (Exception error) -> void
+      def settle: (Protocol::Msg | Exception outcome) { () -> Array[PublishFuture] } -> void
+      def report: (Thread::Queue reports) -> void
+    end
+  end
+end

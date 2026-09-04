@@ -1,0 +1,56 @@
+module Tether
+  class JetStream
+    class Schema
+      NANOSECONDS: Integer
+      ZERO_TIME: String
+      DYNAMIC_METADATA: Regexp
+
+      type field_type = Symbol | singleton(Schema) | Array[Symbol | singleton(Schema)]
+      type level = Integer | Hash[untyped, Integer]
+
+      class Field < Data
+        attr_reader name: Symbol
+        attr_reader key: String
+        attr_reader type: field_type
+        attr_reader values: Hash[Symbol, String]?
+        attr_reader level: level
+
+        def self.new: (name: Symbol, key: String, type: field_type, values: Hash[Symbol, String]?, level: level) -> Field
+      end
+
+      self.@fields: Hash[Symbol, Field]
+
+      def self.fields: () -> Hash[Symbol, Field]
+      def self.field: (Symbol name, field_type type, ?key: String, ?values: Hash[Symbol, String]?, ?level: level) -> void
+      def self.from_h: (Hash[String, untyped] raw) -> instance
+      def self.coerce: (instance | Hash[Symbol, untyped] value) -> instance
+      def self.cast: (untyped type, untyped value) -> untyped
+      def self.decode: (Field field, untyped type, untyped value) -> untyped
+      def self.encode: (Field field, untyped type, untyped value) -> untyped
+
+      private def self.seconds: (Integer nanoseconds) -> (Integer | Float)
+      private def self.unknown_enum: (Field field, untyped value) -> String
+
+      attr_reader raw: Hash[String, untyped]
+
+      @values: Hash[Symbol, untyped]
+
+      def initialize: (?raw: Hash[String, untyped]?, **untyped values) -> void
+      def []: (Symbol | String name) -> untyped
+      def with: (**untyped changes) -> self
+      def to_h: () -> Hash[String, untyped]
+      def to_json: (*untyped) -> String
+      def api_level: () -> Integer
+      def ==: (untyped other) -> bool
+      alias eql? ==
+      def hash: () -> Integer
+      def inspect: () -> String
+
+      private
+
+      def unlisted?: (Field field, untyped value) -> bool
+      def level_of: (Field field, untyped value) -> Integer
+      def strip_dynamic_metadata: (Hash[String, untyped] wire) -> Hash[String, untyped]
+    end
+  end
+end

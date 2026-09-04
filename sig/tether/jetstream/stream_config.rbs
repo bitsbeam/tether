@@ -1,0 +1,135 @@
+module Tether
+  class JetStream
+    # Seconds, whole or fractional.
+    type seconds = Integer | Float
+
+    class Placement < Schema
+      def cluster: () -> String?
+      def tags: () -> Array[String]?
+      def preferred: () -> String?
+    end
+
+    class SubjectTransform < Schema
+      def source: () -> String?
+      def destination: () -> String?
+    end
+
+    class Republish < Schema
+      def source: () -> String?
+      def destination: () -> String?
+      def headers_only: () -> bool?
+    end
+
+    class ExternalStream < Schema
+      def api: () -> String?
+      def deliver: () -> String?
+    end
+
+    class StreamSource < Schema
+      def name: () -> String?
+      def start_sequence: () -> Integer?
+      def start_time: () -> Time?
+      def filter_subject: () -> String?
+      def subject_transforms: () -> Array[SubjectTransform]?
+      def external: () -> ExternalStream?
+      def consumer: () -> Hash[String, untyped]?
+    end
+
+    class ConsumerLimits < Schema
+      def inactive_threshold: () -> seconds?
+      def max_ack_pending: () -> Integer?
+    end
+
+    class StreamConfig < Schema
+      def name: () -> String?
+      def description: () -> String?
+      def subjects: () -> Array[String]?
+      def retention: () -> Symbol?
+      def max_consumers: () -> Integer?
+      def max_messages: () -> Integer?
+      def max_bytes: () -> Integer?
+      def max_age: () -> seconds?
+      def max_messages_per_subject: () -> Integer?
+      def max_message_size: () -> Integer?
+      def discard: () -> Symbol?
+      def storage: () -> Symbol?
+      def replicas: () -> Integer?
+      def no_ack: () -> bool?
+      def duplicate_window: () -> seconds?
+      def placement: () -> Placement?
+      def mirror: () -> StreamSource?
+      def sources: () -> Array[StreamSource]?
+      def compression: () -> Symbol?
+      def first_sequence: () -> Integer?
+      def subject_transform: () -> SubjectTransform?
+      def republish: () -> Republish?
+      def allow_direct: () -> bool?
+      def mirror_direct: () -> bool?
+      def discard_new_per_subject: () -> bool?
+      def sealed: () -> bool?
+      def deny_delete: () -> bool?
+      def deny_purge: () -> bool?
+      def allow_rollup: () -> bool?
+      def consumer_limits: () -> ConsumerLimits?
+      def allow_message_ttl: () -> bool?
+      def subject_delete_marker_ttl: () -> seconds?
+      def allow_message_counter: () -> bool?
+      def allow_atomic: () -> bool?
+      def allow_message_schedules: () -> bool?
+      def persist_mode: () -> Symbol?
+      def allow_batched: () -> bool?
+      def metadata: () -> Hash[String, String]?
+    end
+
+    class StreamState < Schema
+      def messages: () -> Integer?
+      def bytes: () -> Integer?
+      def first_sequence: () -> Integer?
+      def first_time: () -> Time?
+      def last_sequence: () -> Integer?
+      def last_time: () -> Time?
+      def consumer_count: () -> Integer?
+      def subject_count: () -> Integer?
+      def subjects: () -> Hash[String, Integer]?
+      def deleted_count: () -> Integer?
+      def deleted: () -> Array[Integer]?
+      def lost: () -> Hash[String, untyped]?
+    end
+
+    class StreamInfo < Schema
+      def config: () -> StreamConfig
+      def created: () -> Time?
+      def state: () -> StreamState
+      def domain: () -> String?
+      def cluster: () -> Hash[String, untyped]?
+      def mirror: () -> Hash[String, untyped]?
+      def sources: () -> Array[Hash[String, untyped]]?
+      def alternates: () -> Array[Hash[String, untyped]]?
+      def time: () -> Time?
+    end
+
+    class AccountLimits < Schema
+      def max_memory: () -> Integer?
+      def max_storage: () -> Integer?
+      def max_streams: () -> Integer?
+      def max_consumers: () -> Integer?
+      def max_ack_pending: () -> Integer?
+      def memory_max_stream_bytes: () -> Integer?
+      def storage_max_stream_bytes: () -> Integer?
+      def max_bytes_required: () -> bool?
+    end
+
+    class AccountInfo < Schema
+      def memory: () -> Integer?
+      def storage: () -> Integer?
+      def reserved_memory: () -> Integer?
+      def reserved_storage: () -> Integer?
+      def streams: () -> Integer?
+      def consumers: () -> Integer?
+      def limits: () -> AccountLimits?
+      def domain: () -> String?
+      def api: () -> Hash[String, untyped]?
+      def tiers: () -> Hash[String, untyped]?
+    end
+  end
+end

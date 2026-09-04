@@ -1,0 +1,30 @@
+module Tether
+  class JetStream
+    class DirectGet
+      NUM_PENDING: String
+      LAST_SEQUENCE: String
+      UP_TO_SEQUENCE: String
+
+      type request = Hash[String, untyped]
+
+      @client: Client
+      @api: API
+      @stream: String
+      @subject: String
+
+      def initialize: (JetStream jetstream, String stream) -> void
+      def get: (request request, Deadline deadline) -> StoredMessage
+      def each: (request request, Tether::timeout timeout) { (StoredMessage message) -> void } -> void
+
+      private
+
+      def address: (request request) -> [ String, String? ]
+      def page: (Thread::Queue replies, Deadline deadline) { (StoredMessage message) -> void } -> Protocol::Headers?
+      def ending: (Protocol::Msg msg) -> Protocol::Headers?
+      def check_order: (Protocol::Msg msg, Integer previous) -> void
+      def following: (request request, Protocol::Headers? eob) -> request?
+      def refusal: (Protocol::Msg msg) -> Tether::Error
+      def unavailable: () -> ServiceUnavailableError
+    end
+  end
+end

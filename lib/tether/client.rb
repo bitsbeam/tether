@@ -141,6 +141,15 @@ module Tether
       resolver&.unsubscribe
     end
 
+    # Returns a JetStream context for this connection.
+    #
+    # @param options [Hash{Symbol => Object}] `domain:`, `api_prefix:`, `timeout:` and the asynchronous
+    #   publish settings; see {JetStream#initialize}
+    # @return [JetStream] a new context
+    def jetstream(**options)
+      JetStream.new(self, **options)
+    end
+
     # @return [String] a fresh, unique reply subject
     def new_inbox
       "#{@options.inbox_prefix}.#{Connection::NUID.next}"

@@ -1,0 +1,118 @@
+module Tether
+  class JetStream
+    class Error < Tether::Error
+    end
+
+    class APIError < Error
+      RETRYABLE_CODES: Array[Integer]
+      CODES: Hash[Integer, singleton(APIError)]
+
+      attr_reader code: Integer?
+      attr_reader err_code: Integer?
+      attr_reader description: String?
+
+      def self.for: (Hash[String, untyped] error) -> APIError
+
+      def initialize: (Hash[String, untyped] error) -> void
+      def retryable?: () -> bool
+    end
+
+    class StreamNotFoundError < APIError
+    end
+
+    class StreamNameInUseError < APIError
+    end
+
+    class ConsumerNotFoundError < APIError
+    end
+
+    class ConsumerExistsError < APIError
+    end
+
+    class WrongLastSequenceError < APIError
+    end
+
+    class StreamMismatchError < APIError
+    end
+
+    class MessageNotFoundError < APIError
+    end
+
+    class JetStreamNotEnabledError < APIError
+    end
+
+    class InsufficientResourcesError < APIError
+    end
+
+    class RequiredApiLevelError < APIError
+    end
+
+    class StreamSealedError < APIError
+    end
+
+    class LimitReachedError < APIError
+    end
+
+    class IncompleteBatchError < APIError
+    end
+
+    class BatchTooLargeError < APIError
+    end
+
+    class BatchPublishDisabledError < APIError
+    end
+
+    class SchedulesDisabledError < APIError
+    end
+
+    class InvalidScheduleError < APIError
+    end
+
+    class MessageGapError < Error
+    end
+
+    class DuplicateInProgressError < APIError
+    end
+
+    class BadRequestError < APIError
+    end
+
+    class NoStreamResponseError < Error
+      def retryable?: () -> true
+    end
+
+    class ServiceUnavailableError < Error
+      def retryable?: () -> true
+    end
+
+    class TooManyStalledMessagesError < Error
+    end
+
+    class TooManyResultsError < Error
+    end
+
+    class ConsumerDeletedError < Error
+    end
+
+    class NoHeartbeatError < Error
+    end
+
+    class PinIdMismatchError < Error
+    end
+
+    class PushConsumerError < Error
+    end
+
+    class PullError < Error
+      attr_reader status: Integer?
+
+      def initialize: (Integer? status, String? description) -> void
+    end
+
+    class AlreadyAckedError < Error
+    end
+
+    class NotJetStreamMessageError < Error
+    end
+  end
+end

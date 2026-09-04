@@ -1,0 +1,30 @@
+module Tether
+  class JetStream
+    class PublishFuture
+      attr_reader subject: String
+      attr_reader expires_at: Float?
+
+      @generation: Integer
+      @timeout: Numeric?
+      @lock: Thread::Mutex
+      @completed: Thread::ConditionVariable
+      @outcome: (Protocol::Msg | Exception)?
+      @decoded: bool
+      @ack: PubAck?
+      @error: Exception?
+
+      def initialize: (String subject, generation: Integer, ?timeout: Numeric?, ?expires_at: Float?) -> void
+      def value: (?timeout: Tether::timeout) -> PubAck
+      def wait: (?timeout: Tether::timeout) -> bool
+      def done?: () -> bool
+      def error: () -> Exception?
+      def complete: (Protocol::Msg | Exception outcome) -> bool
+      def inspect: () -> String
+
+      private
+
+      def orphan: () -> void
+      def decode: () -> void
+    end
+  end
+end

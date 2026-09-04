@@ -1,0 +1,34 @@
+module Tether
+  class JetStream
+    class Fetch
+      DEFAULT_TIMEOUT: Integer
+      DEFAULT_HEARTBEAT: Integer
+      HEARTBEAT_FROM: Integer
+      MARGIN: Float
+      MAX_MARGIN: Integer
+      MIN_EXPIRES: Float
+
+      @consumer: Consumer
+      @client: Client
+      @batch: Integer
+      @deadline: Deadline
+      @max_bytes: Integer?
+      @no_wait: bool
+      @expires: Numeric?
+      @heartbeat: Numeric?
+      @idle: Numeric?
+      @options: Hash[Symbol, untyped]
+
+      def initialize: (Consumer consumer, Integer batch, deadline: Deadline?, ?wait: bool, ?max_bytes: Integer?, ?heartbeat: Numeric?, **untyped options) -> void
+      def call: () ?{ (Message message) -> void } -> Batch
+
+      private
+
+      def expiry: (Deadline? deadline) -> Numeric?
+      def validate: () -> void
+      def collect: (Thread::Queue frames, Array[Message] messages) ?{ (Message message) -> void } -> Exception?
+      def silence: () -> Exception?
+      def ended: (PullStatus status) -> Exception?
+    end
+  end
+end

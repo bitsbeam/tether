@@ -1,0 +1,51 @@
+module Tether
+  class JetStream
+    include Consumers
+
+    module Consumers
+      @api: API
+
+      MAX_NAME_BYTES: Integer
+      ACTIONS: Hash[Symbol, String]
+
+      type config = ConsumerConfig | Hash[Symbol, untyped]
+
+      def create_consumer: (String stream, ?config? config, ?timeout: Tether::timeout, **untyped fields) -> Consumer
+      def update_consumer: (String stream, ?config? config, ?timeout: Tether::timeout, **untyped fields) -> Consumer
+      def create_or_update_consumer: (String stream, ?config? config, ?timeout: Tether::timeout, **untyped fields) -> Consumer
+      def consumer: (String stream, String name, ?timeout: Tether::timeout) -> Consumer
+      def consumer?: (String stream, String name, ?timeout: Tether::timeout) -> bool
+      def consumers: (String stream, ?timeout: Tether::timeout) -> Enumerator::Lazy[Consumer, void]
+      def consumer_names: (String stream, ?timeout: Tether::timeout) -> Enumerator::Lazy[String, void]
+      def delete_consumer: (String stream, String name, ?timeout: Tether::timeout) -> bool
+      def ordered_consumer: (String stream, **untyped options) -> Ordered
+
+      private
+
+      def write_consumer: (String stream, Symbol action, config? config, Hash[Symbol, untyped] fields, Tether::timeout timeout) -> Consumer
+      def consumer_config: (config? config, Hash[Symbol, untyped] fields) -> ConsumerConfig
+      def start_policy: (ConsumerConfig config) -> Symbol
+      def filter_in_subject?: (ConsumerConfig config) -> bool
+      def check_consumer_name: (untyped name) -> String
+    end
+
+    module StreamConsumers
+      @jetstream: JetStream
+      @name: String
+
+      def create_consumer: (?Consumers::config? config, ?timeout: Tether::timeout, **untyped fields) -> Consumer
+      def update_consumer: (?Consumers::config? config, ?timeout: Tether::timeout, **untyped fields) -> Consumer
+      def create_or_update_consumer: (?Consumers::config? config, ?timeout: Tether::timeout, **untyped fields) -> Consumer
+      def consumer: (String name, ?timeout: Tether::timeout) -> Consumer
+      def consumer?: (String name, ?timeout: Tether::timeout) -> bool
+      def consumers: (?timeout: Tether::timeout) -> Enumerator::Lazy[Consumer, void]
+      def consumer_names: (?timeout: Tether::timeout) -> Enumerator::Lazy[String, void]
+      def delete_consumer: (String name, ?timeout: Tether::timeout) -> bool
+      def ordered_consumer: (**untyped options) -> Ordered
+    end
+
+    class Stream
+      include StreamConsumers
+    end
+  end
+end

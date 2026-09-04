@@ -1,0 +1,31 @@
+module Tether
+  class JetStream
+    class PullStatus < Data
+      PENDING_MESSAGES: String
+      PENDING_BYTES: String
+      PIN_ID: String
+      CONFLICTS: Array[[ Regexp, Symbol, singleton(Error)? ]]
+
+      type kind = :heartbeat | :end | :too_large | :warning | :reset | :pin | :unavailable | :terminal
+
+      attr_reader kind: kind
+      attr_reader code: Integer
+      attr_reader error: Exception?
+      attr_reader pending_messages: Integer
+      attr_reader pending_bytes: Integer
+
+      def self.new: (kind: kind, code: Integer, error: Exception?, pending_messages: Integer, pending_bytes: Integer) -> PullStatus
+      def self.of: (Protocol::Msg msg) -> PullStatus?
+
+      def heartbeat?: () -> bool
+      def normal_end?: () -> bool
+
+      private
+
+      def self.classify: (Integer code, String description) -> [ kind, Exception? ]
+      def self.conflict: (String description) -> [ kind, Exception? ]
+      def self.warning: (Integer code, String description) -> [ kind, Exception? ]
+      def self.required_level: (String description) -> RequiredApiLevelError
+    end
+  end
+end

@@ -1,0 +1,80 @@
+module Tether
+  class JetStream
+    class Pull
+      DEFAULT_MAX_MESSAGES: Integer
+      DEFAULT_EXPIRES: Integer
+      MIN_EXPIRES: Integer
+      HEARTBEAT_RANGE: Range[Numeric]
+
+      type handler = ^(Message message) -> void
+      type error_handler = ^(Exception error) -> void
+      type event = [ Symbol, Exception?, Integer? ]
+
+      attr_reader consumer: Consumer
+      attr_reader error: Exception?
+
+      @client: Client
+      @handler: handler?
+      @expires: Numeric
+      @heartbeat: Numeric
+      @options: Hash[Symbol, untyped]
+      @buffer: Buffer
+      @error_handlers: Array[error_handler]
+      @lock: Thread::Mutex
+      @ended: Thread::ConditionVariable
+      @finished: bool
+      @generation: Integer
+      @epoch: Integer
+      @quiet: bool
+      @workers: Array[Thread]
+      @running: Integer
+      @inbox: String
+      @resolver: Connection::Resolver?
+      @listener: Connection::Events::Registration?
+      @monitor: Connection::Timer::Entry?
+      @last_activity: Float
+
+      def initialize: (Consumer consumer, ?handler? handler, ?max_messages: Integer?, ?max_bytes: Integer?, ?expires: Numeric, ?heartbeat: Numeric?, ?threshold: Integer?, ?concurrency: Integer, ?on_error: error_handler?, **untyped options) -> void
+      def on_error: () { (Exception error) -> void } -> self
+      def next: (?timeout: Tether::timeout) -> Message
+      def each: () { (Message message) -> void } -> self
+              | () -> Enumerator[Message, self]
+      def stop: () -> self
+      def drain: (?timeout: Tether::timeout) -> self
+      def wait: (?timeout: Tether::timeout) -> self
+      def stopped?: () -> bool
+      def inspect: () -> String
+      def next_request: (Integer batch) -> [ String, String ]
+
+      private
+
+      def validate: (**Integer? counts) -> void
+      def start: () -> void
+      def started: () -> void
+      def open_session: () -> void
+      def close_session: () -> void
+      def receive: (Protocol::Msg msg, Integer epoch) -> void
+      def transition: (Symbol event) -> void
+      def check_heartbeat: () -> void
+      def work: () -> void
+      def before_work: () -> void
+      def deliver: (Message message) -> void
+      def delivered: (Message message) -> void
+      def take: (Deadline deadline) -> Message?
+      def prepare: (Deadline deadline) -> void
+      def admit: (Protocol::Msg msg) -> Message?
+      def handle: (Symbol kind, Exception? error, Integer? epoch, Deadline deadline) -> void
+      def fail_with: (Exception error) -> nil
+      def deleted?: (Deadline deadline) -> bool
+      def gone: () -> ConsumerDeletedError
+      def unpin: () -> void
+      def pull_again: () -> void
+      def pull_more: () -> void
+      def report: (Exception? error) -> void
+      def finish: (?Exception? error) -> nil
+      def await_end: (Deadline deadline) -> bool
+      def own_worker?: () -> bool
+      def forked?: () -> bool
+    end
+  end
+end

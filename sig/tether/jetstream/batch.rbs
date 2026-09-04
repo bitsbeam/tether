@@ -1,0 +1,20 @@
+module Tether
+  class JetStream
+    class Batch
+      include Enumerable[Message]
+
+      attr_reader error: Exception?
+
+      @messages: Array[Message]
+
+      def initialize: (Array[Message] messages, ?Exception? error) -> void
+      def each: () { (Message message) -> void } -> self
+              | () -> Enumerator[Message, self]
+      def size: () -> Integer
+      alias length size
+      def empty?: () -> bool
+      def to_a: () -> Array[Message]
+      def inspect: () -> String
+    end
+  end
+end

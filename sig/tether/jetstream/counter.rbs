@@ -1,0 +1,26 @@
+module Tether
+  class JetStream
+    class Counter
+      INCREMENT: String
+      SOURCES: String
+
+      attr_reader subject: String
+
+      @jetstream: JetStream
+      @stream: String?
+      @lock: Thread::Mutex
+
+      def initialize: (JetStream jetstream, String subject, ?stream: String?) -> void
+      def increment: (?Integer delta, ?timeout: Tether::timeout) -> Integer
+      def value: (?timeout: Tether::timeout) -> Integer?
+      def sources: (?timeout: Tether::timeout) -> Hash[String, Hash[String, Integer]]
+      def inspect: () -> String
+
+      private
+
+      def last: (Deadline deadline) -> Hash[String, untyped]?
+      def stream: (Deadline deadline) -> String
+      def decode: (String? encoded) -> String
+    end
+  end
+end

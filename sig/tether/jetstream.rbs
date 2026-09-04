@@ -1,0 +1,50 @@
+module Tether
+  class JetStream
+    DEFAULT_TIMEOUT: Integer
+    DEFAULT_PREFIX: String
+    NAME: Regexp
+
+    type stream_config = StreamConfig | Hash[Symbol, untyped]
+
+    attr_reader client: Client
+    attr_reader api: API
+
+    @publish_async_max_pending: Integer
+    @publish_async_timeout: Numeric?
+    @lock: Thread::Mutex
+    @publisher: Publisher?
+
+    def initialize: (Client client, ?domain: String?, ?api_prefix: String?, ?timeout: Numeric, ?publish_async_max_pending: Integer, ?publish_async_timeout: Numeric?) -> void
+    def timeout: () -> Numeric
+    def create_stream: (?stream_config? config, ?timeout: Tether::timeout, **untyped fields) -> Stream
+    def update_stream: (?stream_config? config, ?timeout: Tether::timeout, **untyped fields) -> Stream
+    def create_or_update_stream: (?stream_config? config, ?timeout: Tether::timeout, **untyped fields) -> Stream
+    def stream: (String name, ?timeout: Tether::timeout) -> Stream
+    def stream?: (String name, ?timeout: Tether::timeout) -> bool
+    def delete_stream: (String name, ?timeout: Tether::timeout) -> bool
+    def streams: (?subject: String?, ?timeout: Tether::timeout) -> Enumerator::Lazy[Stream, void]
+    def stream_names: (?subject: String?, ?timeout: Tether::timeout) -> Enumerator::Lazy[String, void]
+    def stream_name_for: (String subject, ?timeout: Tether::timeout) -> String?
+    def restore_stream: (stream_config config, StreamState | Hash[Symbol, untyped] state, ?timeout: Tether::timeout) { (RestoreWriter writer) -> void } -> Stream
+    def advisories: (?(Symbol | String)? kind) { (Advisory advisory) -> void } -> Connection::Subscription
+    def account_info: (?timeout: Tether::timeout) -> AccountInfo
+    def publish: (String subject, ?String? payload, ?headers: Client::headers?, ?msg_id: _ToS?, ?expect: Hash[Symbol, untyped]?, ?ttl: (Numeric | Symbol)?, ?rollup: Symbol?, ?schedule: Hash[Symbol, untyped]?, ?cancel_schedule: String?, ?timeout: Tether::timeout, ?retries: Integer, ?retry_wait: Numeric) -> PubAck
+    def publish_async: (String subject, ?String? payload, ?headers: Client::headers?, ?stall: Numeric | Deadline, **untyped options) -> PublishFuture
+    def pending_publishes: () -> Integer
+    def wait_for_publishes: (?timeout: Tether::timeout) -> bool
+    def on_publish_error: () { (PublishFuture future) -> void } -> self
+    def batch: (?timeout: Tether::timeout) { (PublishBatch batch) -> void } -> PubAck?
+    def fast_batch: (?gap: Symbol, ?flow: Integer, ?windows: Integer, ?timeout: Tether::timeout) { (FastBatch batch) -> void } -> PubAck?
+    def counter: (String subject, ?stream: String?) -> Counter
+    def inspect: () -> String
+    def check_name: (_ToS name) -> String
+
+    private
+
+    def prefix_for: (String? domain, String? api_prefix) -> String
+    def publisher: () -> Publisher
+    def acknowledgment: (Protocol::Msg reply) -> PubAck
+    def write_stream: (String action, stream_config? config, Hash[Symbol, untyped] fields, Tether::timeout timeout) -> Stream
+    def pause: (Numeric seconds, Deadline deadline) -> void
+  end
+end

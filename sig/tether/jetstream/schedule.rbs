@@ -1,0 +1,29 @@
+module Tether
+  class JetStream
+    module Schedule
+      PATTERN: String
+      TARGET: String
+      SOURCE: String
+      TTL: String
+      ROLLUP: String
+      TIME_ZONE: String
+      SCHEDULER: String
+      NEXT: String
+      PURGE: String
+      KEYS: Array[Symbol]
+      TIMES: Array[Symbol]
+      MINIMUM_INTERVAL: Integer
+
+      def self.apply: (Protocol::Headers headers, Hash[Symbol, untyped] schedule) -> Protocol::Headers
+      def self.cancel: (Protocol::Headers headers, _ToS subject) -> Protocol::Headers
+
+      private
+
+      def self.pattern: (Hash[Symbol, untyped] schedule) -> String
+      def self.instant: (Time time) -> String
+      def self.interval: (Numeric seconds) -> String
+      def self.ttl: (Numeric | Symbol value) -> String
+      def self.text: (Hash[Symbol, untyped] schedule, Symbol name) -> String?
+    end
+  end
+end

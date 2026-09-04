@@ -1,0 +1,44 @@
+module Tether
+  class JetStream
+    class Ordered
+      INACTIVE_THRESHOLD: Integer
+      RECOVERABLE: Array[singleton(Error)]
+
+      class Position < Struct[Integer]
+        attr_accessor stream_sequence: Integer
+        attr_accessor consumer_sequence: Integer
+
+        def self.new: (Integer stream_sequence, Integer consumer_sequence) -> Position
+      end
+
+      attr_reader stream: String
+      attr_reader jetstream: JetStream
+
+      @prefix: String
+      @start: Hash[Symbol, untyped]
+      @base: Hash[Symbol, untyped]
+      @serial: Integer
+      @lock: Thread::Mutex
+      @fetching: Thread::Mutex
+      @reader: Consumer?
+      @position: Position
+
+      def initialize: (JetStream jetstream, String stream, ?filter_subjects: (Array[String] | String)?, ?deliver_policy: Symbol?, ?start_sequence: Integer?, ?start_time: Time?, ?headers_only: bool, ?replay_policy: Symbol?, ?inactive_threshold: Numeric, ?name_prefix: String?, ?metadata: Hash[String, String]?) -> void
+      def consume: (?on_caught_up: (^() -> void)?, **untyped options) { (Message message) -> void } -> Pull
+      def messages: (?on_caught_up: (^() -> void)?, **untyped options) -> Pull
+      def fetch: (Integer batch, ?timeout: Tether::timeout, ?max_bytes: Integer?, ?wait: bool) ?{ (Message message) -> void } -> Batch
+      def close: () -> self
+      def inspect: () -> String
+      def create: (after: Integer, ?deadline: Deadline?) -> Consumer
+      def discard: (Consumer? consumer) -> nil
+
+      private
+
+      def start_policy: (Integer? start_sequence, Time? start_time) -> Symbol
+      def filters: (Array[String] subjects) -> Hash[Symbol, untyped]
+      def fetch_once: (Integer batch, Deadline? deadline, Integer? max_bytes, bool wait) -> Batch
+      def in_order: (Batch result) -> Batch
+      def abandon_reader: () -> void
+    end
+  end
+end

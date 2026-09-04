@@ -1,0 +1,36 @@
+module Tether
+  class JetStream
+    class Ordered
+      class Pull < JetStream::Pull
+        BACKOFF: Array[Integer]
+        ATTEMPT_TIMEOUT: Integer
+        MAX_HEARTBEAT: Integer
+
+        attr_reader stream_sequence: Integer
+
+        @ordered: Ordered
+        @on_caught_up: (^() -> void)?
+        @consumer_sequence: Integer
+        @received: Integer
+        @attempts: Integer
+        @retry_at: Float?
+        @recover: bool
+        @initial: Integer
+        @caught_up: bool
+
+        def initialize: (Ordered ordered, ?JetStream::Pull::handler? handler, ?on_caught_up: (^() -> void)?, ?concurrency: Integer, ?expires: Numeric, ?heartbeat: Numeric?, **untyped options) -> void
+        def caught_up?: () -> bool
+
+        private
+
+        def caught_up: (Message message) -> void
+        def announce: () -> void
+        def gap: () -> nil
+        def replace?: (Symbol kind, Exception? error) -> bool
+        def retire: () -> void
+        def create: (Deadline deadline) -> Consumer?
+        def wait_for_retry: (Deadline deadline) -> bool
+      end
+    end
+  end
+end

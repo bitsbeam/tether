@@ -1,0 +1,60 @@
+module Tether
+  class JetStream
+    class ConsumerConfig < Schema
+      def name: () -> String?
+      def durable: () -> String?
+      def description: () -> String?
+      def deliver_policy: () -> Symbol?
+      def start_sequence: () -> Integer?
+      def start_time: () -> Time?
+      def ack_policy: () -> Symbol?
+      def ack_wait: () -> seconds?
+      def max_deliver: () -> Integer?
+      def backoff: () -> Array[seconds]?
+      def filter_subject: () -> String?
+      def filter_subjects: () -> Array[String]?
+      def replay_policy: () -> Symbol?
+      def sample_frequency: () -> String?
+      def max_waiting: () -> Integer?
+      def max_ack_pending: () -> Integer?
+      def headers_only: () -> bool?
+      def max_batch: () -> Integer?
+      def max_expires: () -> seconds?
+      def max_bytes: () -> Integer?
+      def inactive_threshold: () -> seconds?
+      def replicas: () -> Integer?
+      def memory_storage: () -> bool?
+      def metadata: () -> Hash[String, String]?
+      def pause_until: () -> Time?
+      def priority_groups: () -> Array[String]?
+      def priority_policy: () -> Symbol?
+      def priority_timeout: () -> seconds?
+      def push?: () -> bool
+    end
+
+    class SequenceInfo < Schema
+      def consumer_sequence: () -> Integer?
+      def stream_sequence: () -> Integer?
+      def last_active: () -> Time?
+    end
+
+    class ConsumerInfo < Schema
+      def stream: () -> String?
+      def name: () -> String?
+      def created: () -> Time?
+      def config: () -> ConsumerConfig
+      def delivered: () -> SequenceInfo?
+      def ack_floor: () -> SequenceInfo?
+      def ack_pending_count: () -> Integer?
+      def redelivered_count: () -> Integer?
+      def waiting_count: () -> Integer?
+      def pending_count: () -> Integer?
+      def cluster: () -> Hash[String, untyped]?
+      def push_bound: () -> bool?
+      def paused: () -> bool?
+      def pause_remaining: () -> seconds?
+      def time: () -> Time?
+      def priority_groups: () -> Array[Hash[String, untyped]]?
+    end
+  end
+end

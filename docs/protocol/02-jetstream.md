@@ -1301,7 +1301,9 @@ The chunk protocol:
    message to that reply subject for every chunk. These acknowledgments release flow control
    credit: the server keeps at most `window_size / chunk_size` chunks unacknowledged.
 3. The end of the snapshot is a message with an **empty body** and the header status line
-   `NATS/1.0 204`.
+   `NATS/1.0 204`. Observed on server 2.15.3: when the whole snapshot is smaller than one chunk, the
+   final message is a plain empty `MSG` with no header block at all, and the last, short chunk of
+   any snapshot carries no reply subject. An empty body alone therefore marks the end.
 4. A failure ends the stream with an empty-body message carrying one of: `NATS/1.0 408 No Interest`
    (the subscriber went away), `NATS/1.0 408 No Flow Response` (no chunk acknowledgment for 5
    seconds), `NATS/1.0 500 <error text>`.
@@ -1312,9 +1314,9 @@ Advisories: `$JS.EVENT.ADVISORY.STREAM.SNAPSHOT_CREATE.<stream>` and
 `...SNAPSHOT_COMPLETE.<stream>`.
 
 > **Client rule:** For snapshot: subscribe, send the request, store `config` and `state` from the
-> reply, then for each message on the delivery subscription: if it has a status header and an empty
-> body, finish (204 success, anything else failure); otherwise append the payload to the output and
-> publish an empty message to the message's reply subject. Apply an inactivity timeout between
+> reply, then for each message on the delivery subscription: if it has an empty body, finish (no
+> status or 204 success, any other status failure); otherwise append the payload to the output and
+> publish an empty message to the message's reply subject when it has one. Apply an inactivity timeout between
 > chunks.
 
 ### 5.10 Restore
