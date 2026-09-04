@@ -81,16 +81,22 @@ class NatsServer
     socket.addr[1].tap { socket.close }
   end
 
+  # Docker's published port accepts a connection before nats-server itself is
+  # listening, so a bare TCP connect is not proof of readiness. Wait for a
+  # well formed INFO instead.
   def wait_until_listening
     deadline = Tether::Deadline.after(30)
     until deadline.expired?
       begin
-        TCPSocket.new("127.0.0.1", @port).close
-        return
-      rescue Errno::ECONNREFUSED, Errno::ECONNRESET, Errno::EADDRNOTAVAIL
+        socket = TCPSocket.new("127.0.0.1", @port)
+        socket.timeout = 1
+        return if socket.readpartial(4096).start_with?("INFO ")
+      rescue Errno::ECONNREFUSED, Errno::ECONNRESET, Errno::EADDRNOTAVAIL, EOFError, IO::TimeoutError
         nil
+      ensure
+        socket&.close
       end
     end
-    raise "#{IMAGE} did not accept connections within 30s:\n#{log}"
+    raise "#{IMAGE} did not serve INFO within 30s:\n#{log}"
   end
 end
