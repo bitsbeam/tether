@@ -11,7 +11,7 @@ Gem::Specification.new do |spec|
   spec.summary = "A NATS client for Ruby"
   spec.description = "A NATS and JetStream client for Ruby, built around explicit deadlines and " \
                      "per-subscription dispatch so concurrent use of one connection is safe by design."
-  spec.homepage = "https://github.com/bitsbeam/tether-rb"
+  spec.homepage = "https://github.com/bitsbeam/tether"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.2.0"
   spec.metadata["homepage_uri"] = spec.homepage
