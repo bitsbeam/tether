@@ -441,7 +441,7 @@ module Tether
 
     def collect(replies, subject, deadline, max:, stall:, sentinel:)
       collected = []
-      while (msg = replies.pop(timeout: stall ? deadline.with_at_most(stall).remaining : deadline.remaining))
+      while (msg = replies.pop(timeout: (collected.empty? ? deadline : deadline.with_at_most(stall)).remaining))
         break no_responders(subject, collected) if msg.no_responders?
         break if sentinel&.call(msg)
 

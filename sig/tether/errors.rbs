@@ -18,6 +18,7 @@ module Tether
   class HandlerError < Error
     attr_reader msg: untyped
 
+    attr_reader cause: Exception
     def initialize: (Exception cause, ?untyped msg) -> void
   end
 

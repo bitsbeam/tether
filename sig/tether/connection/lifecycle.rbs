@@ -28,6 +28,7 @@ module Tether
       @transport: Transport?
       @reader: Thread?
       @drainer: Thread?
+      @closed: Thread::Queue
 
       def initialize: (Client::urls urls, Options options) -> void
       def connect: () -> void
@@ -64,6 +65,7 @@ module Tether
       def pause: (Integer attempt) -> void
       def begin_draining: () -> bool
       def drain_subscriptions: (Deadline deadline) -> void
+      def await_close: (Deadline deadline) -> nil
       def begin_closing: () -> [ status, Transport?, Thread? ]?
       def announce_close: (status previous, Exception? error) -> void
       def reset_after_fork: () -> void

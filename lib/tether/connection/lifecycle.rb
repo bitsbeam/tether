@@ -138,7 +138,8 @@ module Tether
       # @raise [DisconnectedError] if there is no live connection to drain; the client is closed
       # @raise [TimeoutError] if the deadline passes; the client is closed
       def drain(deadline)
-        return if %i[closed draining].include?(@status)
+        return if @status == :closed
+        return await_close(deadline) if @status == :draining
 
         unless begin_draining
           close
@@ -227,6 +228,7 @@ module Tether
         @transport = nil
         @reader = nil
         @drainer = nil
+        @closed = Thread::Queue.new
       end
 
       def spawn(role, &block)
@@ -392,6 +394,11 @@ module Tether
         @wakeup.pop(timeout: delay)
       end
 
+      def await_close(deadline)
+        @closed.pop(timeout: deadline.remaining)
+        nil
+      end
+
       def begin_draining
         @lock.synchronize do
           next false unless @status == :connected
@@ -426,6 +433,7 @@ module Tether
         @events.notify(:close, error)
         @events.emit(:disconnect, error) if %i[connected draining].include?(previous)
         @events.emit(:close)
+        @closed.close
         @events.shutdown
       end
 
