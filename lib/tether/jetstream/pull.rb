@@ -255,10 +255,11 @@ module Tether
 
       def deliver(message)
         @handler.call(message)
-        delivered(message)
       rescue StandardError => e
         report(e)
         @client.report_handler_error(e, message)
+      ensure
+        delivered(message)
       end
 
       def delivered(_message); end
