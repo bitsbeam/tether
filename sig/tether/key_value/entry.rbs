@@ -1,0 +1,30 @@
+module Tether
+  class KeyValue
+    class Entry
+      type operation = :put | :delete | :purge
+
+      OPERATION: String
+      MARKER_REASON: String
+      OPERATIONS: Hash[String, operation]
+      MARKERS: Hash[String, operation]
+
+      attr_reader bucket: String
+      attr_reader key: String
+      attr_reader value: String
+      attr_reader revision: Integer
+      attr_reader created_at: Time
+      attr_reader operation: operation
+      attr_reader delta: Integer
+
+      def self.operation_of: (Protocol::Headers? headers) -> operation
+
+      def initialize: (bucket: String, key: String, value: String, revision: Integer, created_at: Time, ?operation: operation, ?delta: Integer) -> void
+      def put?: () -> bool
+      def tombstone?: () -> bool
+      def ==: (untyped other) -> bool
+      alias eql? ==
+      def hash: () -> Integer
+      def inspect: () -> String
+    end
+  end
+end

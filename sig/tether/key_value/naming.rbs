@@ -1,0 +1,35 @@
+module Tether
+  class KeyValue
+    module Naming
+      STREAM_PREFIX: String
+      SUBJECT_PREFIX: String
+      ALL_BUCKETS: String
+      BUCKET: Regexp
+      MAX_BUCKET_LENGTH: Integer
+      KEY: Regexp
+      FILTER: Regexp
+      RESERVED: String
+      EVERYTHING: String
+
+      def self.bucket!: (_ToS name) -> String
+      def self.key!: (_ToS key) -> String
+      def self.writable_key!: (_ToS key) -> String
+      def self.filter!: (_ToS? filter) -> String
+      def self.stream: (_ToS name) -> String
+      def self.bucket_of: (_ToS stream) -> String
+      def self.prefix: (_ToS bucket) -> String
+      def self.dots?: (String text) -> bool
+
+      private
+
+      def bucket!: (_ToS name) -> String
+      def key!: (_ToS key) -> String
+      def writable_key!: (_ToS key) -> String
+      def filter!: (_ToS? filter) -> String
+      def stream: (_ToS name) -> String
+      def bucket_of: (_ToS stream) -> String
+      def prefix: (_ToS bucket) -> String
+      def dots?: (String text) -> bool
+    end
+  end
+end

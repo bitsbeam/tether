@@ -36,6 +36,13 @@ module Tether
     def batch: (?timeout: Tether::timeout) { (PublishBatch batch) -> void } -> PubAck?
     def fast_batch: (?gap: Symbol, ?flow: Integer, ?windows: Integer, ?timeout: Tether::timeout) { (FastBatch batch) -> void } -> PubAck?
     def counter: (String subject, ?stream: String?) -> Counter
+    def create_key_value: (?timeout: Tether::timeout, **untyped options) -> KeyValue
+    def key_value: (String bucket, ?timeout: Tether::timeout) -> KeyValue
+    def update_key_value: (?timeout: Tether::timeout, **untyped options) -> KeyValue
+    def create_or_update_key_value: (?timeout: Tether::timeout, **untyped options) -> KeyValue
+    def delete_key_value: (String bucket, ?timeout: Tether::timeout) -> bool
+    def key_value_names: (?timeout: Tether::timeout) -> Enumerator::Lazy[String, void]
+    def key_values: (?timeout: Tether::timeout) -> Enumerator::Lazy[KeyValue, void]
     def inspect: () -> String
     def check_name: (_ToS name) -> String
 

@@ -1,0 +1,47 @@
+module Tether
+  class KeyValue
+    class Watcher
+      type handler = ^(Entry entry) -> void
+      type ready_handler = ^() -> void
+      type error_handler = ^(Exception error) -> void
+
+      WAKE_INTERVAL: Float
+
+      attr_reader key_value: KeyValue
+      attr_reader filters: Array[String]
+
+      @handler: handler?
+      @ignore_deletes: bool
+      @prefix: String
+      @lock: Thread::Mutex
+      @changed: Thread::ConditionVariable
+      @ready: bool
+      @ready_handlers: Array[ready_handler]
+      @pull: JetStream::Ordered::Pull
+
+      def initialize: (KeyValue key_value, Array[String] filters, ?handler? handler, ?include_history: bool, ?updates_only: bool, ?ignore_deletes: bool, ?meta_only: bool, ?resume_from: Integer?, ?on_ready: ready_handler?, ?on_error: error_handler?) -> void
+      def on_ready: () { () -> void } -> self
+      def on_error: () { (Exception error) -> void } -> self
+      def ready?: () -> bool
+      def wait_until_ready: (?timeout: Tether::timeout) -> bool
+      def next: (?timeout: Tether::timeout) -> Entry
+      def each: () { (Entry entry) -> void } -> self
+              | () -> Enumerator[Entry, self]
+      def stop: () -> self
+      def stopped?: () -> bool
+      def wait: (?timeout: Tether::timeout) -> self
+      def error: () -> Exception?
+      def revision: () -> Integer
+      def each_initial: (Tether::timeout timeout) { (Entry entry) -> void } -> void
+      def inspect: () -> String
+
+      private
+
+      def policy: (bool include_history, bool updates_only, Integer? resume_from) -> Symbol
+      def start: (Symbol policy, Integer? resume_from, bool meta_only, error_handler? on_error) -> JetStream::Ordered::Pull
+      def deliver: (JetStream::Message message) -> void
+      def entry_for: (JetStream::Message message) -> Entry?
+      def announce: () -> void
+    end
+  end
+end

@@ -278,6 +278,68 @@ module Tether
       Counter.new(self, subject, stream: stream)
     end
 
+    # Creates a Key/Value bucket. Creating one that exists with the same options succeeds.
+    #
+    # @param timeout [Numeric, Deadline, nil] how long to wait
+    # @param options [Hash{Symbol => Object}] `bucket:` and the options of {KeyValue::Config#initialize}
+    # @return [KeyValue] the bucket
+    # @raise [KeyValue::BucketExistsError] if the bucket exists with other options
+    # @raise [KeyValue::InvalidBucketNameError] if the name breaks the rules
+    def create_key_value(timeout: nil, **options)
+      KeyValue.create(self, timeout: timeout, **options)
+    end
+
+    # Looks a Key/Value bucket up.
+    #
+    # @param bucket [String] the bucket's name
+    # @param timeout [Numeric, Deadline, nil] how long to wait
+    # @return [KeyValue] the bucket
+    # @raise [KeyValue::BucketNotFoundError] if the bucket does not exist
+    def key_value(bucket, timeout: nil)
+      KeyValue.bind(self, bucket, timeout: timeout)
+    end
+
+    # Replaces the options of a Key/Value bucket. Options that are not given return to their defaults.
+    #
+    # @param timeout [Numeric, Deadline, nil] how long to wait
+    # @param options [Hash{Symbol => Object}] `bucket:` and the options of {KeyValue::Config#initialize}
+    # @return [KeyValue] the bucket
+    # @raise [KeyValue::BucketNotFoundError] if the bucket does not exist
+    def update_key_value(timeout: nil, **options)
+      KeyValue.update(self, timeout: timeout, **options)
+    end
+
+    # Replaces the options of a Key/Value bucket, or creates it when it does not exist.
+    #
+    # @param timeout [Numeric, Deadline, nil] how long to wait
+    # @param options [Hash{Symbol => Object}] `bucket:` and the options of {KeyValue::Config#initialize}
+    # @return [KeyValue] the bucket
+    def create_or_update_key_value(timeout: nil, **options)
+      KeyValue.create_or_update(self, timeout: timeout, **options)
+    end
+
+    # Deletes a Key/Value bucket and everything in it.
+    #
+    # @param bucket [String] the bucket's name
+    # @param timeout [Numeric, Deadline, nil] how long to wait
+    # @return [Boolean] whether the server confirmed the deletion
+    # @raise [KeyValue::BucketNotFoundError] if the bucket does not exist
+    def delete_key_value(bucket, timeout: nil)
+      KeyValue.delete(self, bucket, timeout: timeout)
+    end
+
+    # @param timeout [Numeric, Deadline, nil] seconds each page request may take, or a deadline for the whole listing
+    # @return [Enumerator::Lazy<String>] the name of every Key/Value bucket, fetched a page at a time
+    def key_value_names(timeout: nil)
+      KeyValue.names(self, timeout: timeout)
+    end
+
+    # @param timeout [Numeric, Deadline, nil] seconds each page request may take, or a deadline for the whole listing
+    # @return [Enumerator::Lazy<KeyValue>] every Key/Value bucket, fetched a page at a time
+    def key_values(timeout: nil)
+      KeyValue.list(self, timeout: timeout)
+    end
+
     # @return [String] the API prefix without the connection
     def inspect
       "#<Tether::JetStream prefix=#{@api.prefix.inspect}>"

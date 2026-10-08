@@ -1741,4 +1741,118 @@ RSpec.describe Tether::JetStream do
         .to raise_error(ArgumentError, /cannot be combined/)
     end
   end
+
+  describe "#create_key_value" do
+    it "creates the stream behind the bucket and returns the bucket" do
+      made << "KV_#{name}"
+      bucket = js.create_key_value(bucket: name, history: 5, storage: :memory)
+
+      expect(bucket).to have_attributes(class: Tether::KeyValue, bucket: name)
+      expect(js.stream("KV_#{name}").config).to have_attributes(
+        subjects: ["$KV.#{name}.>"], max_messages_per_subject: 5, discard: :new, allow_rollup: true,
+        deny_delete: true, allow_direct: true, max_messages: -1, max_consumers: -1, duplicate_window: 120
+      )
+    end
+
+    it "raises BucketExistsError when the bucket exists with other options" do
+      made << "KV_#{name}"
+      js.create_key_value(bucket: name, storage: :memory)
+
+      expect { js.create_key_value(bucket: name, storage: :memory, history: 9) }
+        .to raise_error(Tether::KeyValue::BucketExistsError)
+    end
+
+    it "raises InvalidBucketNameError for a name that cannot be a bucket" do
+      expect { js.create_key_value(bucket: "no dots.allowed") }
+        .to raise_error(Tether::KeyValue::InvalidBucketNameError)
+    end
+
+    it "raises ArgumentError without a bucket name" do
+      expect { js.create_key_value(history: 5) }.to raise_error(ArgumentError, /bucket/)
+    end
+  end
+
+  describe "#key_value" do
+    it "returns the bucket with the given name" do
+      made << "KV_#{name}"
+      js.create_key_value(bucket: name, storage: :memory).put("color", "blue")
+
+      expect(js.key_value(name)["color"]).to eq("blue")
+    end
+
+    it "raises BucketNotFoundError when the bucket does not exist" do
+      expect { js.key_value(name) }.to raise_error(Tether::KeyValue::BucketNotFoundError) do |error|
+        expect(error.cause).to be_a(Tether::JetStream::StreamNotFoundError)
+      end
+    end
+
+    it "does not take a stream that lacks the bucket prefix for a bucket" do
+      make
+
+      expect { js.key_value(name) }.to raise_error(Tether::KeyValue::BucketNotFoundError)
+    end
+  end
+
+  describe "#update_key_value" do
+    it "replaces the options of the bucket" do
+      made << "KV_#{name}"
+      js.create_key_value(bucket: name, storage: :memory)
+
+      expect(js.update_key_value(bucket: name, storage: :memory, history: 10).status.history).to eq(10)
+    end
+
+    it "raises BucketNotFoundError when the bucket does not exist" do
+      expect { js.update_key_value(bucket: name, history: 10) }
+        .to raise_error(Tether::KeyValue::BucketNotFoundError)
+    end
+  end
+
+  describe "#create_or_update_key_value" do
+    it "creates the bucket when it does not exist" do
+      made << "KV_#{name}"
+
+      expect(js.create_or_update_key_value(bucket: name, storage: :memory, history: 3).status.history).to eq(3)
+    end
+
+    it "updates the bucket when it exists" do
+      made << "KV_#{name}"
+      js.create_key_value(bucket: name, storage: :memory)
+
+      expect(js.create_or_update_key_value(bucket: name, storage: :memory, history: 8).status.history).to eq(8)
+    end
+  end
+
+  describe "#delete_key_value" do
+    it "deletes the bucket" do
+      js.create_key_value(bucket: name, storage: :memory)
+
+      expect(js.delete_key_value(name)).to be(true)
+      expect { js.key_value(name) }.to raise_error(Tether::KeyValue::BucketNotFoundError)
+    end
+
+    it "raises BucketNotFoundError when the bucket does not exist" do
+      expect { js.delete_key_value(name) }.to raise_error(Tether::KeyValue::BucketNotFoundError)
+    end
+  end
+
+  describe "#key_value_names" do
+    it "lists the names of the buckets and of nothing else" do
+      made << "KV_#{name}"
+      js.create_key_value(bucket: name, storage: :memory)
+      make("#{name}_plain", subjects: ["#{name}.>"])
+
+      expect(js.key_value_names.to_a).to include(name)
+      expect(js.key_value_names.to_a).not_to include("#{name}_plain")
+    end
+  end
+
+  describe "#key_values" do
+    it "returns a handle for every bucket" do
+      made << "KV_#{name}"
+      js.create_key_value(bucket: name, storage: :memory)
+
+      expect(js.key_values.map(&:bucket).to_a).to include(name)
+      expect(js.key_values.first).to be_a(Tether::KeyValue)
+    end
+  end
 end

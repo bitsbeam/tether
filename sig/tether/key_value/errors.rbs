@@ -1,0 +1,30 @@
+module Tether
+  class KeyValue
+    class Error < Tether::Error
+    end
+
+    class BucketNotFoundError < Error
+    end
+
+    class BucketExistsError < Error
+    end
+
+    class BadBucketError < Error
+    end
+
+    class KeyNotFoundError < Error
+    end
+
+    class InvalidKeyError < Error
+    end
+
+    class InvalidBucketNameError < Error
+    end
+
+    class RevisionMismatchError < Error
+    end
+
+    class KeyExistsError < RevisionMismatchError
+    end
+  end
+end

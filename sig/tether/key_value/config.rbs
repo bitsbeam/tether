@@ -1,0 +1,52 @@
+module Tether
+  class KeyValue
+    class Config
+      type source = JetStream::StreamSource | Hash[Symbol, untyped]
+
+      MAX_HISTORY: Integer
+      DUPLICATE_WINDOW: Integer
+      MIN_LIMIT_MARKER_TTL: Integer
+      STORAGES: Array[Symbol]
+
+      attr_reader bucket: String
+      attr_reader description: String?
+      attr_reader history: Integer
+      attr_reader ttl: Numeric?
+      attr_reader max_bytes: Integer?
+      attr_reader max_value_size: Integer?
+      attr_reader storage: Symbol
+      attr_reader replicas: Integer
+      attr_reader compression: bool
+      attr_reader limit_marker_ttl: Numeric?
+      attr_reader mirror: JetStream::StreamSource?
+      attr_reader sources: Array[JetStream::StreamSource]?
+      attr_reader placement: JetStream::Placement?
+      attr_reader republish: JetStream::Republish?
+      attr_reader metadata: Hash[String, String]?
+
+      def self.from_stream: (JetStream::StreamConfig config) -> Config
+      private def self.limit: (Numeric? value) -> Numeric?
+
+      def initialize: (bucket: String, ?history: Integer, ?ttl: Numeric?, ?max_bytes: Integer?, ?max_value_size: Integer?, ?storage: Symbol, ?replicas: Integer, ?compression: boolish, ?description: String?, ?limit_marker_ttl: Numeric?, ?mirror: source?, ?sources: Array[source]?, ?placement: (JetStream::Placement | Hash[Symbol, untyped])?, ?republish: (JetStream::Republish | Hash[Symbol, untyped])?, ?metadata: Hash[String, String]?, ?validate: bool) -> void
+      def stream_config: () -> JetStream::StreamConfig
+      def ==: (untyped other) -> bool
+      alias eql? ==
+      def hash: () -> Integer
+      def inspect: () -> String
+
+      private
+
+      def check: () -> void
+      def check_limit_marker: () -> void
+      def identity: () -> Hash[Symbol, untyped]
+      def limits: () -> Hash[Symbol, untyped]
+      def behavior: () -> Hash[Symbol, untyped]
+      def copies: () -> Hash[Symbol, untyped]
+      def subjects: () -> String
+      def unlimited: (Integer? value) -> Integer
+      def duplicate_window: () -> Numeric
+      def prefixed: (_ToS name) -> String
+      def sourced: (JetStream::StreamSource source) -> JetStream::StreamSource
+    end
+  end
+end

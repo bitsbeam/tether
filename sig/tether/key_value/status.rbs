@@ -1,0 +1,26 @@
+module Tether
+  class KeyValue
+    class Status
+      BACKING_STORE: String
+
+      attr_reader bucket: String
+      attr_reader stream_info: JetStream::StreamInfo
+
+      def initialize: (String bucket, JetStream::StreamInfo stream_info) -> void
+      def values: () -> Integer
+      def history: () -> Integer
+      def ttl: () -> Numeric?
+      def limit_marker_ttl: () -> Numeric?
+      def bytes: () -> Integer
+      def compressed?: () -> bool
+      def backing_store: () -> String
+      def metadata: () -> Hash[String, String]
+      def config: () -> Config
+      def inspect: () -> String
+
+      private
+
+      def positive: (Numeric? seconds) -> Numeric?
+    end
+  end
+end

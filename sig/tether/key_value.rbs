@@ -1,0 +1,60 @@
+module Tether
+  class KeyValue
+    include Enumerable[Entry]
+
+    OPERATION: String
+    DELETE: String
+    PURGE: String
+    PURGE_DELETES_AFTER: Integer
+    MIN_API_LEVEL: Integer
+
+    attr_reader bucket: String
+    attr_reader jetstream: JetStream
+    attr_reader stream: JetStream::Stream
+    attr_reader read_prefix: String
+
+    @write_prefix: String
+
+    def self.create: (JetStream jetstream, ?timeout: Tether::timeout, **untyped options) -> KeyValue
+    def self.update: (JetStream jetstream, ?timeout: Tether::timeout, **untyped options) -> KeyValue
+    def self.create_or_update: (JetStream jetstream, ?timeout: Tether::timeout, **untyped options) -> KeyValue
+    def self.bind: (JetStream jetstream, String bucket, ?timeout: Tether::timeout) -> KeyValue
+    def self.delete: (JetStream jetstream, String bucket, ?timeout: Tether::timeout) -> bool
+    def self.names: (JetStream jetstream, ?timeout: Tether::timeout) -> Enumerator::Lazy[String, void]
+    def self.list: (JetStream jetstream, ?timeout: Tether::timeout) -> Enumerator::Lazy[KeyValue, void]
+
+    private def self.require_limit_markers: (JetStream jetstream, Deadline deadline) -> void
+
+    def initialize: (JetStream jetstream, JetStream::Stream stream) -> void
+    def get: (String key, ?revision: Integer?, ?timeout: Tether::timeout) -> Entry?
+    def []: (String key) -> String?
+    def []=: (String key, String value) -> Integer
+    def fetch: (String key, ?timeout: Tether::timeout) -> String
+             | [T] (String key, ?timeout: Tether::timeout) { (String key) -> T } -> (String | T)
+    def put: (String key, String value, ?timeout: Tether::timeout) -> Integer
+    def create: (String key, String value, ?ttl: Numeric?, ?timeout: Tether::timeout) -> Integer
+    def update: (String key, String value, revision: Integer, ?timeout: Tether::timeout) -> Integer
+    def delete: (String key, ?revision: Integer?, ?timeout: Tether::timeout) -> Integer
+    def purge: (String key, ?revision: Integer?, ?ttl: Numeric?, ?timeout: Tether::timeout) -> Integer
+    def purge_deletes: (?older_than: Numeric, ?timeout: Tether::timeout) -> Integer
+    def keys: (*(String | Array[String]) filters, ?timeout: Tether::timeout) -> Enumerator::Lazy[String, void]
+    def history: (String key, ?timeout: Tether::timeout) -> Array[Entry]
+    def each: (?timeout: Tether::timeout) { (Entry entry) -> void } -> self
+            | (?timeout: Tether::timeout) -> Enumerator[Entry, self]
+    def watch: (*(String | Array[String]) keys, **untyped options) ?{ (Entry entry) -> void } -> Watcher
+    def status: (?timeout: Tether::timeout) -> Status
+    def config: () -> Config
+    def inspect: () -> String
+
+    private
+
+    def write_prefix: (String? external_api) -> String
+    def write: (String key, String? value, Deadline deadline, ?revision: Integer?, ?operation: String?, ?ttl: Numeric?) -> Integer
+    def load: (String key, Integer? revision, Deadline deadline) -> Entry?
+    def create_over_tombstone: (String key, String value, Numeric? ttl, Deadline deadline) -> Integer
+    def guarded: (String key) { () -> Integer } -> Integer
+    def expected: (Integer? revision) -> Integer?
+    def lifetime: (Numeric? ttl) -> Numeric?
+    def initial: (Array[String] filters, Tether::timeout timeout, **untyped options) { (Entry entry) -> void } -> void
+  end
+end
