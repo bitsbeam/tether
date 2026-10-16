@@ -1,0 +1,28 @@
+module Tether
+  class ObjectStore
+    class Status
+      BACKING_STORE: String
+
+      attr_reader bucket: String
+      attr_reader stream_info: JetStream::StreamInfo
+
+      def initialize: (String bucket, JetStream::StreamInfo stream_info) -> void
+      def description: () -> String?
+      def metadata: () -> Hash[String, String]
+      def ttl: () -> Numeric?
+      def storage: () -> Symbol
+      def replicas: () -> Integer
+      def max_bytes: () -> Integer?
+      def sealed?: () -> bool
+      def compressed?: () -> bool
+      def size: () -> Integer
+      def backing_store: () -> String
+      def stream: () -> String
+      def inspect: () -> String
+
+      private
+
+      def config: () -> JetStream::StreamConfig
+    end
+  end
+end

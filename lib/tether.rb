@@ -13,6 +13,7 @@ require "tether/client"
 require "tether/service"
 require "tether/jetstream"
 require "tether/key_value"
+require "tether/object_store"
 
 # A NATS client for Ruby.
 module Tether

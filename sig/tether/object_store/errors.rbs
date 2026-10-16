@@ -1,0 +1,33 @@
+module Tether
+  class ObjectStore
+    class Error < Tether::Error
+    end
+
+    class BucketNotFoundError < Error
+    end
+
+    class BucketExistsError < Error
+    end
+
+    class InvalidBucketNameError < Error
+    end
+
+    class InvalidObjectNameError < Error
+    end
+
+    class ObjectNotFoundError < Error
+    end
+
+    class ObjectExistsError < Error
+    end
+
+    class DigestMismatchError < Error
+    end
+
+    class BucketSealedError < Error
+    end
+
+    class LinkError < Error
+    end
+  end
+end

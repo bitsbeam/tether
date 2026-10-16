@@ -340,6 +340,61 @@ module Tether
       KeyValue.list(self, timeout: timeout)
     end
 
+    # Creates an Object Store bucket, the stream `OBJ_<bucket>`. Creating a bucket that exists with the
+    # same options returns it.
+    #
+    # @param bucket [String] the bucket's name: letters, digits, `_` and `-`
+    # @param description [String, nil] free text describing the bucket
+    # @param ttl [Numeric, nil] seconds an object lives; nil keeps objects until they are deleted
+    # @param max_bytes [Integer, nil] the most bytes the bucket may hold; a full bucket refuses uploads
+    # @param storage [Symbol] :file or :memory
+    # @param replicas [Integer] how many servers hold the bucket
+    # @param compression [Boolean] compress the bucket's data on the server
+    # @param placement [Placement, Hash, nil] where the bucket's replicas should be placed
+    # @param metadata [Hash{String => String}, nil] metadata for the bucket
+    # @param timeout [Numeric, Deadline, nil] how long to wait
+    # @return [ObjectStore] the bucket
+    # @raise [ObjectStore::BucketExistsError] if the bucket exists with other options
+    # @raise [ObjectStore::InvalidBucketNameError] if the name breaks the rules
+    def create_object_store(bucket:, description: nil, ttl: nil, max_bytes: nil, storage: :file, replicas: 1,
+                            compression: false, placement: nil, metadata: nil, timeout: nil)
+      ObjectStore.create(self, bucket: bucket, description: description, ttl: ttl, max_bytes: max_bytes,
+                               storage: storage, replicas: replicas, compression: compression,
+                               placement: placement, metadata: metadata, timeout: timeout)
+    end
+
+    # Binds to an existing Object Store bucket.
+    #
+    # @param bucket [String] the bucket's name
+    # @param timeout [Numeric, Deadline, nil] how long to wait
+    # @return [ObjectStore] the bucket
+    # @raise [ObjectStore::BucketNotFoundError] if the bucket does not exist
+    def object_store(bucket, timeout: nil)
+      ObjectStore.bind(self, bucket, timeout: timeout)
+    end
+
+    # Deletes an Object Store bucket and everything in it.
+    #
+    # @param bucket [String] the bucket's name
+    # @param timeout [Numeric, Deadline, nil] how long to wait
+    # @return [Boolean] whether the server confirmed the deletion
+    # @raise [ObjectStore::BucketNotFoundError] if the bucket does not exist
+    def delete_object_store(bucket, timeout: nil)
+      ObjectStore.delete(self, bucket, timeout: timeout)
+    end
+
+    # @param timeout [Numeric, Deadline, nil] seconds each page request may take, or a deadline for the whole listing
+    # @return [Enumerator::Lazy<String>] the name of every Object Store bucket, fetched a page at a time
+    def object_store_names(timeout: nil)
+      ObjectStore.names(self, timeout: timeout)
+    end
+
+    # @param timeout [Numeric, Deadline, nil] seconds each page request may take, or a deadline for the whole listing
+    # @return [Enumerator::Lazy<ObjectStore>] every Object Store bucket, fetched a page at a time
+    def object_stores(timeout: nil)
+      ObjectStore.all(self, timeout: timeout)
+    end
+
     # @return [String] the API prefix without the connection
     def inspect
       "#<Tether::JetStream prefix=#{@api.prefix.inspect}>"

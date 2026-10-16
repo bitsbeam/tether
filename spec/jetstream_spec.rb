@@ -1855,4 +1855,157 @@ RSpec.describe Tether::JetStream do
       expect(js.key_values.first).to be_a(Tether::KeyValue)
     end
   end
+
+  describe "#create_object_store" do
+    def create_request(**options)
+      requests = collect(connect, "$JS.API.STREAM.CREATE.OBJ_#{name}")
+      made << "OBJ_#{name}"
+      error_from { js.create_object_store(bucket: name, **options) }
+      JSON.parse(requests.pop(timeout: 2).data)
+    end
+
+    it "returns the bucket" do
+      made << "OBJ_#{name}"
+
+      expect(js.create_object_store(bucket: name, storage: :memory))
+        .to have_attributes(class: Tether::ObjectStore, name: name)
+    end
+
+    it "sends exactly the stream configuration of an object store" do
+      expect(create_request(storage: :memory))
+        .to eq("name" => "OBJ_#{name}", "subjects" => ["$O.#{name}.C.>", "$O.#{name}.M.>"], "max_age" => 0,
+               "max_bytes" => -1, "storage" => "memory", "num_replicas" => 1, "discard" => "new",
+               "allow_rollup_hdrs" => true, "allow_direct" => true)
+    end
+
+    it "defaults to file storage" do
+      expect(create_request["storage"]).to eq("file")
+    end
+
+    it "sends every option in the stream configuration" do
+      request = create_request(description: "build artifacts", ttl: 3600, max_bytes: 5_000_000, storage: :file,
+                               replicas: 3, compression: true, placement: { cluster: "east", tags: ["ssd"] },
+                               metadata: { "team" => "ops" })
+
+      expect(request)
+        .to eq("name" => "OBJ_#{name}", "description" => "build artifacts",
+               "subjects" => ["$O.#{name}.C.>", "$O.#{name}.M.>"], "max_age" => 3_600_000_000_000,
+               "max_bytes" => 5_000_000, "storage" => "file", "num_replicas" => 3,
+               "placement" => { "cluster" => "east", "tags" => ["ssd"] }, "discard" => "new",
+               "allow_rollup_hdrs" => true, "allow_direct" => true, "compression" => "s2",
+               "metadata" => { "team" => "ops" })
+    end
+
+    it "creates the stream behind the bucket with the configuration other clients expect" do
+      made << "OBJ_#{name}"
+      js.create_object_store(bucket: name, storage: :memory)
+
+      expect(js.stream("OBJ_#{name}").config).to have_attributes(
+        name: "OBJ_#{name}", subjects: ["$O.#{name}.C.>", "$O.#{name}.M.>"], retention: :limits, max_age: 0,
+        max_bytes: -1, max_messages: -1, max_messages_per_subject: -1, max_message_size: -1, max_consumers: -1,
+        storage: :memory, replicas: 1, discard: :new, duplicate_window: 120, allow_rollup: true,
+        allow_direct: true, deny_delete: false, deny_purge: false, sealed: false, compression: :none
+      )
+    end
+
+    it "creates the stream with the options the server keeps" do
+      made << "OBJ_#{name}"
+      js.create_object_store(bucket: name, description: "build artifacts", ttl: 3600, max_bytes: 5_000_000,
+                             storage: :file, compression: true, metadata: { "team" => "ops" })
+
+      expect(js.stream("OBJ_#{name}").config).to have_attributes(
+        description: "build artifacts", max_age: 3600, max_bytes: 5_000_000, storage: :file, compression: :s2,
+        metadata: include("team" => "ops"), discard: :new, allow_rollup: true, allow_direct: true
+      )
+    end
+
+    it "returns the bucket when it exists with the same options" do
+      made << "OBJ_#{name}"
+      js.create_object_store(bucket: name, storage: :memory)
+
+      expect(js.create_object_store(bucket: name, storage: :memory).name).to eq(name)
+    end
+
+    it "raises BucketExistsError when the bucket exists with other options" do
+      made << "OBJ_#{name}"
+      js.create_object_store(bucket: name, storage: :memory)
+
+      expect { js.create_object_store(bucket: name, storage: :memory, max_bytes: 1_000_000) }
+        .to raise_error(Tether::ObjectStore::BucketExistsError)
+    end
+
+    it "raises InvalidBucketNameError for a name with a dot" do
+      expect { js.create_object_store(bucket: "no.dots") }
+        .to raise_error(Tether::ObjectStore::InvalidBucketNameError)
+    end
+
+    it "raises InvalidBucketNameError for an empty name" do
+      expect { js.create_object_store(bucket: "") }.to raise_error(Tether::ObjectStore::InvalidBucketNameError)
+    end
+
+    it "raises InvalidBucketNameError for a name longer than 251 characters" do
+      expect { js.create_object_store(bucket: "a" * 252) }
+        .to raise_error(Tether::ObjectStore::InvalidBucketNameError)
+    end
+
+    it "raises ArgumentError for an unknown option" do
+      expect { js.create_object_store(bucket: name, history: 5) }.to raise_error(ArgumentError, /history/)
+    end
+  end
+
+  describe "#object_store" do
+    it "binds to an existing bucket" do
+      made << "OBJ_#{name}"
+      js.create_object_store(bucket: name, storage: :memory).put("object", "hello world")
+
+      expect(js.object_store(name).get("object").read).to eq("hello world")
+    end
+
+    it "raises BucketNotFoundError for a bucket that does not exist" do
+      expect { js.object_store(name) }.to raise_error(Tether::ObjectStore::BucketNotFoundError, /#{name}/)
+    end
+
+    it "raises InvalidBucketNameError for a name that cannot be a bucket" do
+      expect { js.object_store("no spaces") }.to raise_error(Tether::ObjectStore::InvalidBucketNameError)
+    end
+  end
+
+  describe "#delete_object_store" do
+    it "deletes the stream behind the bucket" do
+      js.create_object_store(bucket: name, storage: :memory)
+
+      expect(js.delete_object_store(name)).to be(true)
+      expect(js.stream?("OBJ_#{name}")).to be(false)
+    end
+
+    it "raises BucketNotFoundError for a bucket that does not exist" do
+      expect { js.delete_object_store(name) }.to raise_error(Tether::ObjectStore::BucketNotFoundError)
+    end
+  end
+
+  describe "#object_store_names" do
+    it "returns the names of the object store buckets" do
+      made << "OBJ_#{name}"
+      js.create_object_store(bucket: name, storage: :memory)
+
+      expect(js.object_store_names.to_a).to include(name)
+    end
+
+    it "leaves streams that are not object stores out" do
+      make(subjects: ["#{name}.>"])
+
+      expect(js.object_store_names.to_a).not_to include(name)
+    end
+  end
+
+  describe "#object_stores" do
+    it "returns a handle for every bucket" do
+      made << "OBJ_#{name}"
+      js.create_object_store(bucket: name, storage: :memory).put("object", "hello world")
+
+      found = js.object_stores.find { |store| store.name == name }
+
+      expect(found.get("object").read).to eq("hello world")
+    end
+  end
 end

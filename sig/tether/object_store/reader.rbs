@@ -1,0 +1,41 @@
+module Tether
+  class ObjectStore
+    class Reader
+      WINDOW_BYTES: Integer
+      MAX_WINDOW: Integer
+
+      attr_reader info: Info
+
+      @stream: JetStream::Stream
+      @total: Integer
+      @timeout: Numeric | Deadline
+      @digest: Digest::SHA256
+      @received: Integer
+      @buffer: String?
+      @pull: JetStream::Ordered::Pull?
+      @state: Symbol
+      @error: Exception?
+
+      def initialize: (JetStream::Stream stream, Info info, ?timeout: Tether::timeout) -> void
+      def read: (?Integer? length, ?String? buffer) -> String?
+      def each: () { (String chunk) -> void } -> self
+              | () -> Enumerator[String, self]
+      def eof?: () -> bool
+      def close: () -> nil
+      def closed?: () -> bool
+      def inspect: () -> String
+
+      private
+
+      def take: (Integer length) -> String?
+      def drain: () -> String
+      def next_chunk: () -> String?
+      def fetch: () -> String?
+      def open: () -> JetStream::Ordered::Pull
+      def finish: () -> nil
+      def verify: () -> void
+      def fail_with: (Exception error, ?Exception? cause) -> bot
+      def release: () -> void
+    end
+  end
+end

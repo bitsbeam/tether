@@ -1,0 +1,39 @@
+module Tether
+  class ObjectStore
+    class Writer
+      WINDOW_BYTES: Integer
+      MAX_WINDOW: Integer
+
+      class Result < Data
+        attr_reader size: Integer
+        attr_reader chunks: Integer
+        attr_reader digest: String
+
+        def self.new: (size: Integer, chunks: Integer, digest: String) -> Result
+      end
+
+      @jetstream: JetStream
+      @subject: String
+      @chunk_size: Integer
+      @timeout: Tether::timeout
+      @window: Integer
+      @futures: Array[JetStream::PublishFuture]
+      @digest: Digest::SHA256
+      @size: Integer
+      @chunks: Integer
+
+      def initialize: (JetStream jetstream, String subject, Integer chunk_size, Tether::timeout timeout) -> void
+      def write: (ObjectStore::source source) -> Result
+      def settle: (Deadline deadline) -> nil
+
+      private
+
+      def pieces: (ObjectStore::source source) { (String piece) -> void } -> void
+      def slices: (String source) { (String piece) -> void } -> void
+      def stream: (ObjectStore::_Reader source) { (String piece) -> void } -> void
+      def publish: (String piece) -> void
+      def confirm: () -> void
+      def deadline: () -> Deadline
+    end
+  end
+end

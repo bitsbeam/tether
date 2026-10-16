@@ -1,0 +1,77 @@
+module Tether
+  class ObjectStore
+    DEFAULT_CHUNK_SIZE: Integer
+    STREAM_PREFIX: String
+    BUCKET_NAME: Regexp
+    MAX_BUCKET_NAME: Integer
+    ALL_BUCKETS: String
+
+    type source = String | _Reader | nil
+    type headers = Protocol::Headers | Hash[untyped, untyped]
+
+    interface _Reader
+      def read: (Integer length) -> String?
+    end
+
+    interface _Writer
+      def write: (String data) -> untyped
+    end
+
+    attr_reader name: String
+    attr_reader jetstream: JetStream
+    attr_reader stream: JetStream::Stream
+
+    def self.create: (JetStream jetstream, bucket: _ToS, ?timeout: Tether::timeout, **untyped options) -> ObjectStore
+    def self.bind: (JetStream jetstream, _ToS bucket, ?timeout: Tether::timeout) -> ObjectStore
+    def self.delete: (JetStream jetstream, _ToS bucket, ?timeout: Tether::timeout) -> bool
+    def self.names: (JetStream jetstream, ?timeout: Tether::timeout) -> Enumerator::Lazy[String, void]
+    def self.all: (JetStream jetstream, ?timeout: Tether::timeout) -> Enumerator::Lazy[ObjectStore, void]
+    def self.stream_name: (String bucket) -> String
+    def self.chunk_subject: (String bucket, String nuid) -> String
+    def self.metadata_subject: (String bucket, String name) -> String
+    def self.metadata_filter: (String bucket) -> String
+    def self.check_bucket: (untyped bucket) -> String
+
+    private def self.stream_config: (String bucket, ?description: String?, ?ttl: Numeric?, ?max_bytes: Integer?, ?storage: Symbol, ?replicas: Integer?, ?compression: bool | Symbol, ?placement: (JetStream::Placement | Hash[Symbol, untyped])?, ?metadata: Hash[String, String]?) -> Hash[Symbol, untyped]
+    private def self.compression_of: (bool | Symbol | nil value) -> Symbol?
+
+    def initialize: (JetStream jetstream, JetStream::Stream stream) -> void
+    def put: (String | Symbol name, ?source data, ?description: String?, ?headers: headers?, ?metadata: Hash[untyped, untyped]?, ?chunk_size: Integer, ?timeout: Tether::timeout) -> Info
+    def put_file: (String | Symbol name, String path, **untyped options) -> Info
+    def get: (String | Symbol name, ?show_deleted: bool, ?timeout: Tether::timeout) -> Reader
+           | (String | Symbol name, into: _Writer, ?show_deleted: bool, ?timeout: Tether::timeout) -> Info
+           | (String | Symbol name, ?show_deleted: bool, ?timeout: Tether::timeout) { (String chunk) -> void } -> Info
+    def get_file: (String | Symbol name, String path, **untyped options) -> Info
+    def info: (String | Symbol name, ?show_deleted: bool, ?timeout: Tether::timeout) -> Info?
+    def exist?: (String | Symbol name, ?timeout: Tether::timeout) -> bool
+    def delete: (String | Symbol name, ?timeout: Tether::timeout) -> self
+    def update_meta: (String | Symbol current, ?name: (String | Symbol)?, ?description: String?, ?headers: headers?, ?metadata: Hash[untyped, untyped]?, ?timeout: Tether::timeout) -> Info
+    def add_link: (String | Symbol name, Info target, ?timeout: Tether::timeout) -> Info
+    def add_bucket_link: (String | Symbol name, ObjectStore | String bucket, ?timeout: Tether::timeout) -> Info
+    def list: (?deleted: bool, ?timeout: Tether::timeout) -> Enumerator::Lazy[Info, void]
+    def watch: (?include_history: bool, ?ignore_deletes: bool, ?updates_only: bool, ?on_ready: (^() -> void)?, ?on_error: (^(Exception error) -> void)?) ?{ (Info info) -> void } -> Watcher
+    def seal: (?timeout: Tether::timeout) -> self
+    def status: (?timeout: Tether::timeout) -> Status
+    def inspect: () -> String
+
+    def reader_for: (String name, bool show_deleted, Tether::timeout timeout, ?followed: bool) -> Reader
+
+    private
+
+    def deadline: (Tether::timeout timeout) -> Deadline
+    def check_name: (untyped name) -> String
+    def check_source: (untyped data, untyped chunk_size) -> void
+    def lookup: (String name, Tether::timeout timeout, ?deleted: bool) -> Info?
+    def upload: (Info meta, source data, Tether::timeout timeout) -> Info
+    def store: (Info meta, Tether::timeout timeout) -> Info
+    def abandon: (Writer writer, Info meta) -> void
+    def discard_chunks: (Info previous, Tether::timeout timeout) -> void
+    def link: (untyped name, Info::Link target, Tether::timeout timeout) -> Info
+    def each_entry: (bool deleted, Tether::timeout timeout) { (Info info) -> void } -> void
+    def entry: (JetStream::Message message) -> Info?
+    def writing: [T] (Tether::timeout timeout) { () -> T } -> T
+    def exists?: (Deadline limit) -> bool
+    def missing: (String name) -> ObjectNotFoundError
+    def gone: () -> BucketNotFoundError
+  end
+end

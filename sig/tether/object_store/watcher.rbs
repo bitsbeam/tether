@@ -1,0 +1,36 @@
+module Tether
+  class ObjectStore
+    class Watcher
+      POLICIES: Hash[bool, Symbol]
+
+      @bucket: String
+      @ignore_deletes: bool
+      @handler: (^(Info info) -> void)?
+      @lock: Thread::Mutex
+      @became_ready: Thread::ConditionVariable
+      @ready: bool
+      @ready_handlers: Array[^() -> void]
+      @pull: JetStream::Ordered::Pull
+
+      def initialize: (JetStream::Stream stream, String bucket, ?include_history: bool, ?ignore_deletes: bool, ?updates_only: bool, ?on_ready: (^() -> void)?, ?on_error: (^(Exception error) -> void)?) ?{ (Info info) -> void } -> void
+      def on_ready: () { () -> void } -> self
+      def on_error: () { (Exception error) -> void } -> self
+      def ready?: () -> bool
+      def wait_until_ready: (?timeout: Tether::timeout) -> self
+      def next: (?timeout: Tether::timeout) -> Info
+      def each: () { (Info info) -> void } -> self
+              | () -> Enumerator[Info, self]
+      def stop: () -> self
+      def stopped?: () -> bool
+      def error: () -> Exception?
+      def inspect: () -> String
+
+      private
+
+      def start: (JetStream::Stream stream, Symbol policy, (^(Exception error) -> void)? on_error) -> JetStream::Ordered::Pull
+      def deliver: (JetStream::Message message) -> void
+      def entry: (JetStream::Message message) -> Info?
+      def ready!: () -> void
+    end
+  end
+end

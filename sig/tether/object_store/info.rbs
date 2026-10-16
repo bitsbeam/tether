@@ -1,0 +1,61 @@
+module Tether
+  class ObjectStore
+    class Info
+      DIGEST_PREFIX: String
+      KEYS: Array[String]
+      OPTION_KEYS: Array[String]
+
+      class Link < Data
+        attr_reader bucket: String
+        attr_reader name: String?
+
+        def self.new: (bucket: String, name: String?) -> Link
+        def with: (?bucket: String, ?name: String?) -> Link
+      end
+
+      attr_reader name: String
+      attr_reader description: String?
+      attr_reader headers: Hash[String, Array[String]]
+      attr_reader metadata: Hash[String, String]
+      attr_reader bucket: String
+      attr_reader nuid: String
+      attr_reader size: Integer
+      attr_reader chunks: Integer
+      attr_reader digest: String?
+      attr_reader chunk_size: Integer?
+      attr_reader link: Link?
+      attr_reader modified_at: Time?
+      attr_reader raw: Hash[String, untyped]
+
+      @deleted: bool
+
+      def self.parse: (String data, ?modified_at: Time?) -> Info
+      def self.from_h: (Hash[String, untyped] raw, ?modified_at: Time?) -> Info
+      def self.digest_of: (String hash) -> String
+
+      def initialize: (name: String, bucket: String, nuid: String, ?size: Integer, ?chunks: Integer, ?digest: String?, ?description: String?, ?headers: (Protocol::Headers | Hash[untyped, untyped])?, ?metadata: Hash[untyped, untyped]?, ?chunk_size: Integer?, ?link: Link?, ?deleted: bool, ?modified_at: Time?, ?raw: Hash[String, untyped]?) -> void
+      def deleted?: () -> bool
+      def link?: () -> bool
+      def bucket_link?: () -> bool
+      def digest_bytes: () -> String?
+      def with: (**untyped changes) -> Info
+      def to_h: () -> Hash[String, untyped]
+      def to_json: (*untyped) -> String
+      def ==: (untyped other) -> bool
+      alias eql? ==
+      def hash: () -> Integer
+      def inspect: () -> String
+
+      private
+
+      def fields: () -> Hash[Symbol, untyped]
+      def header_values: ((Protocol::Headers | Hash[untyped, untyped])? headers) -> Hash[String, Array[String]]
+      def stored_options: () -> Hash[String, untyped]
+      def presence: [T < _Empty] (T value) -> T?
+
+      interface _Empty
+        def empty?: () -> bool
+      end
+    end
+  end
+end
