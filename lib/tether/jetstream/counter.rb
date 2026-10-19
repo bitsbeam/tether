@@ -4,7 +4,7 @@ require "json"
 
 module Tether
   class JetStream
-    # A distributed counter: one subject of a stream with `allow_msg_counter`.
+    # A distributed counter: one subject of a stream with `allow_message_counter`.
     #
     # The server keeps the running total with arbitrary precision and sends
     # it as a decimal string, which a Ruby Integer holds without loss.

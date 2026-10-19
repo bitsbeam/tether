@@ -36,6 +36,7 @@ module Tether
         def pause: (Deadline deadline) -> bool
         def owed?: () -> bool
         def size: () -> Integer
+        def empty?: () -> bool
 
         private
 

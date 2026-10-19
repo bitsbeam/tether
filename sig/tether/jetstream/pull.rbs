@@ -48,6 +48,7 @@ module Tether
 
       private
 
+      def idle: (Integer? epoch) -> void
       def validate: (**Integer? counts) -> void
       def start: () -> void
       def started: () -> void
@@ -71,6 +72,7 @@ module Tether
       def pull_again: () -> void
       def pull_more: () -> void
       def report: (Exception? error) -> void
+      def failed: (Exception error, Message message) -> void
       def finish: (?Exception? error) -> nil
       def await_end: (Deadline deadline) -> bool
       def own_worker?: () -> bool

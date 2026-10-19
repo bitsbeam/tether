@@ -175,7 +175,8 @@ module Tether
       def each_initial(timeout)
         api = @key_value.jetstream.api
         until @ready
-          entry = entry_for(@pull.next(timeout: api.deadline(timeout)))
+          message = @pull.next_initial(timeout: api.deadline(timeout)) or break
+          entry = entry_for(message)
           yield entry if entry
         end
       end

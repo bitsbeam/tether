@@ -202,6 +202,11 @@ module Tether
           @lock.synchronize { @messages.size }
         end
 
+        # @return [Boolean] whether no message is waiting to be taken
+        def empty?
+          @lock.synchronize { @messages.empty? }
+        end
+
         private
 
         def take_control

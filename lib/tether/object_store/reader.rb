@@ -142,7 +142,8 @@ module Tether
         @pull ||= open
         return finish if @pull.caught_up?
 
-        chunk = @pull.next(timeout: @timeout).data
+        message = @pull.next_initial(timeout: @timeout) or return verify
+        chunk = message.data
         @digest.update(chunk)
         @received += chunk.bytesize
         verify if @pull.caught_up?

@@ -206,7 +206,7 @@ module Tether
         @last_activity = Deadline.now
         status = PullStatus.of(msg)
         return @buffer.push(msg) unless status
-        return if status.heartbeat?
+        return idle(epoch) if status.heartbeat?
 
         case @buffer.correct(status.pending_messages, status.pending_bytes, too_large: status.kind == :too_large)
         when :refill then @buffer.post([:refill, nil, epoch], once: true)
@@ -256,13 +256,14 @@ module Tether
       def deliver(message)
         @handler.call(message)
       rescue StandardError => e
-        report(e)
-        @client.report_handler_error(e, message)
+        failed(e, message)
       ensure
         delivered(message)
       end
 
       def delivered(_message); end
+
+      def idle(_epoch); end
 
       def take(deadline)
         loop do
@@ -337,6 +338,11 @@ module Tether
         finish(e)
       rescue ConnectionError
         nil
+      end
+
+      def failed(error, message)
+        report(error) unless @lock.synchronize { @error_handlers.empty? }
+        @client.report_handler_error(error, message)
       end
 
       def report(error)

@@ -12,6 +12,7 @@ module Tether
         BACKOFF = [1, 2, 4, 8, 10].freeze
         ATTEMPT_TIMEOUT = 10
         MAX_HEARTBEAT = 5
+        PROBE_AFTER = 1
 
         # @param ordered [Ordered] the ordered consumer this loop reads for
         # @param handler [Proc, nil] called with each message on the worker thread
@@ -45,6 +46,33 @@ module Tether
 
         # @return [Integer] the stream sequence of the last message handed out; 0 before the first
         attr_reader :stream_sequence
+
+        # Takes the next message, like {JetStream::Pull#next}. While the consumer has not caught up it also asks
+        # the server whether anything is left, so messages that expired before delivery do not hold the caller.
+        #
+        # @param timeout [Numeric, Deadline, nil] how long to wait
+        # @return [Message] the next message
+        # @raise [TimeoutError] if none arrives in time
+        # @raise [StopIteration] if the loop was stopped
+        def next(timeout: nil)
+          deadline = Deadline.coerce(timeout)
+          catch(:caught_up) { return await(deadline) }
+          await(deadline)
+        end
+
+        # Takes the next of the messages that existed when the consumer was created.
+        #
+        # @api private
+        # @param timeout [Numeric, Deadline, nil] how long to wait
+        # @return [Message, nil] the next message, or nil when none of them is left
+        # @raise [TimeoutError] if none arrives in time
+        # @raise [StopIteration] if the loop was stopped
+        def next_initial(timeout: nil)
+          return nil if @caught_up
+
+          catch(:caught_up) { return await(Deadline.coerce(timeout)) }
+          nil
+        end
 
         private
 
@@ -91,7 +119,41 @@ module Tether
           nil
         end
 
+        def idle(epoch)
+          @buffer.post([:idle, nil, epoch], once: true) unless @caught_up
+        end
+
+        def await(deadline)
+          JetStream::Pull.instance_method(:next).bind_call(
+            self, timeout: @caught_up ? deadline : deadline.with_at_most(PROBE_AFTER)
+          )
+        rescue TimeoutError
+          raise if @caught_up || deadline.expired?
+
+          probe(deadline)
+          retry
+        end
+
+        def probe(deadline)
+          info = @consumer.info(timeout: deadline)
+          settle if info.pending_count.to_i.zero? && info.delivered.consumer_sequence.to_i == @consumer_sequence
+        rescue Tether::Error
+          nil
+        end
+
+        def settle
+          return if @caught_up
+
+          @initial = @received + @buffer.size
+          return unless @buffer.empty?
+
+          @caught_up = true
+          announce
+          throw :caught_up unless @handler
+        end
+
         def handle(kind, error, epoch, deadline)
+          return settle if kind == :idle && epoch == @epoch
           return super unless (epoch.nil? || epoch == @epoch) && replace?(kind, error)
 
           report(error)

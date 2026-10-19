@@ -500,7 +500,7 @@ module Tether
       pull = @stream.ordered_consumer(filter_subjects: self.class.metadata_filter(@name),
                                       deliver_policy: :last_per_subject).messages
       until pull.caught_up?
-        message = pull.next(timeout: timeout || @jetstream.timeout)
+        message = pull.next_initial(timeout: timeout || @jetstream.timeout) or break
         info = entry(message)
         yield info if info && (deleted || !info.deleted?)
       end

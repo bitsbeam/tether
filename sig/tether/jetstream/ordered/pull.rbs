@@ -5,6 +5,7 @@ module Tether
         BACKOFF: Array[Integer]
         ATTEMPT_TIMEOUT: Integer
         MAX_HEARTBEAT: Integer
+        PROBE_AFTER: Integer
 
         attr_reader stream_sequence: Integer
 
@@ -20,11 +21,17 @@ module Tether
 
         def initialize: (Ordered ordered, ?JetStream::Pull::handler? handler, ?on_caught_up: (^() -> void)?, ?concurrency: Integer, ?expires: Numeric, ?heartbeat: Numeric?, **untyped options) -> void
         def caught_up?: () -> bool
+        def next: (?timeout: Tether::timeout) -> Message
+        def next_initial: (?timeout: Tether::timeout) -> Message?
 
         private
 
         def caught_up: (Message message) -> void
         def announce: () -> void
+        def idle: (Integer? epoch) -> void
+        def settle: () -> void
+        def await: (Deadline deadline) -> Message
+        def probe: (Deadline deadline) -> void
         def gap: () -> nil
         def replace?: (Symbol kind, Exception? error) -> bool
         def retire: () -> void
