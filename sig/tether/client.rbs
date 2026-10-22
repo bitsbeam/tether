@@ -77,6 +77,7 @@ module Tether
     def register: (Connection::Subscription entry) -> Connection::Subscription
                 | (Connection::Resolver entry) -> Connection::Resolver
     def ensure_accepting: () -> void
+    def ensure_started: () -> void
     def own_thread?: () -> bool
     def check_subject: (String subject) -> String
     def encode: (String subject, String? payload, String? reply_to, headers? headers) -> String

@@ -252,6 +252,12 @@ RSpec.describe Tether::Client do
   end
 
   describe "#publish" do
+    it "raises when the client was never connected" do
+      client = described_class.new(server.uri)
+
+      expect { client.publish("never.connected", "x") }.to raise_error(Tether::ConnectionError, /not connected/)
+    end
+
     def expect_invalid_subject(subject)
       expect { nc.publish(subject, "x") }.to raise_error(Tether::InvalidSubjectError)
     end

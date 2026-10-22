@@ -71,7 +71,7 @@ module Tether
     # @raise [ReconnectBufferFullError, DisconnectedError] during an outage
     # @raise [ConnectionClosedError] if the connection is closed
     def publish(subject, payload = nil, reply_to: nil, headers: nil, flush: false)
-      @connection.check_fork
+      ensure_started
       check_subject(subject)
       Protocol::Subject.check!(reply_to, "reply subject") if reply_to
       @connection.writer.write(encode(subject, payload, reply_to, headers), flush: flush, messages: 1)
@@ -395,8 +395,13 @@ module Tether
       entry
     end
 
-    def ensure_accepting
+    def ensure_started
       @connection.check_fork
+      raise ConnectionError, "not connected: call connect first" if @connection.status == :disconnected
+    end
+
+    def ensure_accepting
+      ensure_started
       raise ConnectionClosedError, "connection is closed" if status == :closed
       raise ConnectionDrainingError, "connection is draining" if status == :draining
     end
