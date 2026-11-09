@@ -1924,9 +1924,12 @@ S: MSG _INBOX.Ky9Pf34qY6Nb3wWD25RQ6H.fb01.100.fail.101.2.$FI 3 56␍␊{"stream"
 > `0`) and **wait for its reply**: a flow acknowledgment with `seq` 0 gives the cadence; an error
 > PubAck means the batch was refused. Then publish freely, tracking the highest acknowledged
 > batch sequence. Before each publish, wait if
-> `last_ack.seq + last_ack.msgs * max_outstanding_acks <= next_batch_sequence`, where
+> `last_ack.seq + last_ack.msgs * max_outstanding_acks <= last_sent_batch_sequence`, that is, send
+> batch sequence N only while `N <= last_ack.seq + last_ack.msgs * max_outstanding_acks`, where
 > `max_outstanding_acks` is 1, 2 (recommended default) or at most 3 (ADR-50: clients must not allow
-> more than 3). An acknowledgment for sequence N implies all earlier ones. Adopt a changed `msgs`
+> more than 3). Comparing against the next sequence to send instead of the last one sent is off by
+> one and deadlocks with a flow of 1 and one outstanding acknowledgment: after the acknowledgment
+> of sequence 1 the publisher would wait for one the server only sends once it has sequence 2. An acknowledgment for sequence N implies all earlier ones. Adopt a changed `msgs`
 > value from each flow acknowledgment, but never from a gap report. On silence, ping. Classify
 > every incoming message by `type`: `ack`, `gap`, `err`, or (no `type`) the final PubAck, which
 > ends the batch. The reference Go client does not implement this; the rule is derived from the

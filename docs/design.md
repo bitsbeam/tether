@@ -1,8 +1,9 @@
 # Tether client design
 
-This document defines what the tether gem is when it is finished: its public API, its internal
-architecture, its concurrency model, and the order in which it gets built. It is derived from three
-sources, each studied at the source level rather than from documentation:
+This document defines what the tether gem is: its public API, its internal architecture, its
+concurrency model, and how it was built. Where it and the code disagree, the code is right and this
+document has a bug. It is derived from three sources, each studied at the source level rather than
+from documentation:
 
 - **The protocol itself**, as implemented by `nats-server` (`2.16.0-dev`, JetStream API level 5).
   The wire contract is written up in [`docs/protocol/`](protocol/README.md); every `Client rule`
@@ -30,7 +31,7 @@ Contents:
 12. [Concurrency model](#12-concurrency-model)
 13. [Feature matrix](#13-feature-matrix)
 14. [Testing](#14-testing)
-15. [Build order](#15-build-order)
+15. [How it was built](#15-how-it-was-built)
 16. [Decisions and their reasons](#16-decisions-and-their-reasons)
 
 ---
@@ -55,8 +56,8 @@ Contents:
 **Non-goals**
 
 - Ractor support. The client relies on shared mutable state guarded by locks.
-- A compatibility shim for the `nats-pure` API. Section 16 lists the renames; a migration guide is
-  enough.
+- A compatibility shim for the `nats-pure` API. The
+  [migration guide](migrating-from-nats-pure.md) lists the renames, and that is enough.
 - Legacy features the reference client has deprecated: encoded connections, the old per-request
   subscription style, the legacy JetStream API shape (`js.subscribe`, `js.pull_subscribe`).
 - Push consumers. The NATS documentation and `nats.go` both steer new code to pull consumers, which
@@ -97,7 +98,7 @@ reading the code:
 | Error handling | Every server `-ERR` reconnects or closes, so an invalid subject or a permissions violation drops the connection, and with reconnect on, the replayed `SUB` loops | A table derived from the server source says which errors close the connection; reconnect is driven by the socket closing, never by an error's text |
 | Server pool | Auth errors are booked against `server_pool.first`, which is the *next* server, not the connected one | The pool tracks the current server explicitly; per-server state attaches to it |
 | Request/reply | The requester publishes, then starts waiting; a reply that arrives in between is lost and the request times out | The waiter is registered before the publish and is a queue, so an early reply is simply there when the requester looks |
-| Flush | PONGs are matched to waiters last-in-first-out, and every server PING adds a waiter nobody owns | A FIFO of waiters; server PINGs never touch it (already implemented) |
+| Flush | PONGs are matched to waiters last-in-first-out, and every server PING adds a waiter nobody owns | A FIFO of waiters; server PINGs never touch it |
 | Write path | No write lock; the flusher, drain, close and reconnect threads all write | One buffer of whole frames behind a buffer lock, and one I/O lock that serializes socket writes (5.4) |
 | Encoding | Frames are built by interpolation and joined; a UTF-8 frame and a binary frame in one batch raise `Encoding::CompatibilityError` in the flusher, which reconnects and loses the batch | Every frame is binary before it meets another |
 | Back-pressure | The pending buffer is bounded at 32,768 *commands*, not bytes, and publishers block without a timeout during an outage | A byte-bounded reconnect buffer that raises on overflow |
@@ -139,7 +140,7 @@ be surprising:
 | A flush interrupted by a disconnect returns "connection closed" | It raises a disconnected error distinct from closed |
 | Unknown `-ERR` closes the connection without calling the error handler | Every `-ERR` reaches the error handler |
 | A panic in a subscription callback is not recovered | An exception in a handler is caught, reported, and delivery continues |
-| The parser has no control-line length limit | Bounded control line and payload (already implemented) |
+| The parser has no control-line length limit | Bounded control line and payload |
 | No client for atomic batch publish or counters | Both are implemented from the ADRs and the server source |
 | A second `Consume` on a stopped ordered consumer fails | Consumption handles are independent of the consumer handle |
 
@@ -160,13 +161,14 @@ before it is appended to the write buffer under the writer's buffer lock (5.4). 
 different threads cannot interleave, and no string of one encoding ever meets a string of another.
 
 **Every wait is a queue pop with a deadline.** Tether blocks only on `Thread::Queue`,
-`Thread::SizedQueue`, `Mutex`, `ConditionVariable#wait` and socket readiness (`IO#timeout=` for the
-reader, `IO#wait_writable` for the writer). These are the primitives a `Fiber::Scheduler`
-intercepts, so the client works under Falcon and `async` without a special mode. `Timeout.timeout`, `Thread#raise` and `Thread#kill` are banned from `lib`,
-and a spec enforces it. A waiter is registered before the action that will satisfy it is taken,
-which removes the lost-wakeup class of bug by construction. No tether thread ever joins or waits
-on itself: an operation that would, such as draining a subscription from inside its own handler,
-is defined to start the work and return.
+`Thread::SizedQueue`, `Mutex`, `ConditionVariable#wait` and socket readiness (`IO#wait_readable` for
+the reader, `IO#wait_writable` for the writer). These are the primitives a `Fiber::Scheduler`
+intercepts, so the client is built to work under Falcon and `async` without a special mode (the
+suite does not run under a scheduler yet, section 14). `Timeout.timeout`, `Thread#raise` and
+`Thread#kill` are banned from `lib`, and a spec enforces it. A waiter is registered before the
+action that will satisfy it is taken, which removes the lost-wakeup class of bug by construction. No
+tether thread ever joins or waits on itself: an operation that would, such as draining a
+subscription from inside its own handler, is defined to start the work and return.
 
 **One `Deadline` per call, never a bare timeout.** `Tether::Deadline` is an absolute instant on the
 monotonic clock. A public method turns its `timeout:` into a `Deadline` once, on entry, with
@@ -251,62 +253,75 @@ user's event thread.
 
 ### 4.2 Source tree
 
-Files that exist today are marked `✓`; the rest are added by the build order in section 15.
 
 ```
-lib/tether.rb                          ✓ Tether.connect
-lib/tether/version.rb                  ✓
-lib/tether/errors.rb                   ✓ hierarchy and the -ERR table
-lib/tether/deadline.rb                 ✓ the deadline every blocking call carries
-lib/tether/error_holder.rb             ✓ becomes connection/events.rb
-lib/tether/client.rb                   ✓ the public connection object
+lib/tether.rb                            Tether.connect and the public aliases
+lib/tether/version.rb
+lib/tether/errors.rb                     the hierarchy and the -ERR table
+lib/tether/deadline.rb                   the deadline every blocking call carries
+lib/tether/client.rb                     the public connection object
 lib/tether/options.rb                    validated connect options
 lib/tether/server_info.rb                the INFO document as a value object
-lib/tether/stats.rb                      counters
+lib/tether/stats.rb                      the Stats snapshot and the live counters
 
-lib/tether/protocol/parser.rb          ✓
-lib/tether/protocol/encoder.rb         ✓
-lib/tether/protocol/headers.rb         ✓
-lib/tether/protocol/msg.rb             ✓
-lib/tether/protocol/dispatcher.rb      ✓
-lib/tether/protocol/registry.rb        ✓
-lib/tether/protocol/subject.rb           validation and matching
+lib/tether/protocol/parser.rb            bytes to frames, no I/O
+lib/tether/protocol/encoder.rb           frames to bytes
+lib/tether/protocol/headers.rb
+lib/tether/protocol/msg.rb
+lib/tether/protocol/dispatcher.rb        what the reader thread does with each frame
+lib/tether/protocol/registry.rb          the sid map
+lib/tether/protocol/subject.rb           validation
 
-lib/tether/connection/transport.rb     ✓ TCP, and the base interface
-lib/tether/connection/tls.rb             TLS upgrade and contexts
+lib/tether/connection/transport.rb       TCP, TLS upgrade, and the base interface
+lib/tether/connection/tls.rb             building the SSL context
 lib/tether/connection/websocket.rb       RFC 6455 framing as a transport
 lib/tether/connection/writer.rb          buffer, flusher, reconnect buffer
 lib/tether/connection/server_pool.rb     seeds, discovered servers, rotation
-lib/tether/connection/lifecycle.rb       connect, reconnect, drain, close
+lib/tether/connection/lifecycle.rb       connect, reconnect, drain, close, fork reset
 lib/tether/connection/handshake.rb       INFO, TLS, CONNECT, PING, PONG
 lib/tether/connection/keepalive.rb       client PING timer
 lib/tether/connection/timer.rb           one scheduler thread for all timeouts
 lib/tether/connection/events.rb          handler registry and the event thread
-lib/tether/connection/subscription.rb  ✓
-lib/tether/connection/inbox.rb         ✓ request mux
-lib/tether/connection/nuid.rb          ✓
+lib/tether/connection/subscription.rb    Subscription and Resolver
+lib/tether/connection/inbox.rb           request mux
+lib/tether/connection/nuid.rb
 
 lib/tether/auth.rb                       credential sources, precedence
 lib/tether/auth/nkey.rb                  seed decoding and Ed25519 signing via OpenSSL
-lib/tether/auth/credentials.rb           .creds and seed file parsing
+lib/tether/auth/credentials.rb           .creds parsing
 
-lib/tether/jetstream.rb                  the context: API requests, streams, publish
+lib/tether/jetstream.rb                  the context: streams, publish, bucket entry points
 lib/tether/jetstream/api.rb              subjects, request and response plumbing, paging
 lib/tether/jetstream/errors.rb           APIError and the err_code table
 lib/tether/jetstream/schema.rb           declarative field tables, JSON conversion
-lib/tether/jetstream/stream_config.rb    and stream_info, consumer_config, consumer_info, ...
+lib/tether/jetstream/stream_config.rb    StreamConfig, StreamInfo, AccountInfo and their parts
+lib/tether/jetstream/consumer_config.rb  ConsumerConfig, ConsumerInfo
 lib/tether/jetstream/stream.rb
+lib/tether/jetstream/stored_message.rb   a message read back outside of a consumer
+lib/tether/jetstream/direct_get.rb       single, batched and multi-last Direct Get
+lib/tether/jetstream/backup.rb           snapshot and restore
+lib/tether/jetstream/advisory.rb
+lib/tether/jetstream/pub_ack.rb          PubAck and the publish headers
+lib/tether/jetstream/schedule.rb         the schedule: option of publish
+lib/tether/jetstream/publisher.rb        async publish: the ack collector and its window
+lib/tether/jetstream/publish_future.rb
+lib/tether/jetstream/publish_batch.rb    atomic batches
+lib/tether/jetstream/fast_batch.rb       fast-ingest batches
+lib/tether/jetstream/counter.rb
+lib/tether/jetstream/consumers.rb        consumer management on the context and on a Stream
 lib/tether/jetstream/consumer.rb
-lib/tether/jetstream/pull.rb             the pull engine: fetch, consume, messages
-lib/tether/jetstream/ordered.rb          gap detection and recreation
 lib/tether/jetstream/message.rb          ack methods and metadata
-lib/tether/jetstream/publisher.rb        sync, async, batch, counters
+lib/tether/jetstream/fetch.rb            one pull request
+lib/tether/jetstream/batch.rb            the result of a fetch
+lib/tether/jetstream/pull_status.rb      the status classification table
+lib/tether/jetstream/pull.rb             the pull engine behind consume and messages; pull/buffer.rb
+lib/tether/jetstream/ordered.rb          gap detection and recreation; ordered/pull.rb
 
-lib/tether/key_value.rb                  and key_value/{entry,watcher,status}.rb
-lib/tether/object_store.rb               and object_store/{info,reader,watcher}.rb
-lib/tether/service.rb                    and service/{endpoint,group,stats,request}.rb
+lib/tether/key_value.rb                  and key_value/{config,entry,watcher,status,naming,errors}.rb
+lib/tether/object_store.rb               and object_store/{info,reader,writer,watcher,status,errors}.rb
+lib/tether/service.rb                    and service/{registry,endpoint,group,request,response,info,stats,rules}.rb
 
-sig/                                   ✓ RBS for every file above
+sig/                                     RBS for every file above
 ```
 
 `Tether::Msg`, `Tether::Headers` and `Tether::Subscription` are public aliases for the classes in
@@ -352,18 +367,21 @@ What each call does in each state:
 | `drain` | drains | closes without draining, raises `DisconnectedError` | waits for the drain in progress | no-op |
 | `force_reconnect` | drops the socket and reconnects | cuts the current backoff short | `ConnectionDrainingError` | `ConnectionClosedError` |
 
+`force_reconnect` on a client built with `reconnect: false` raises `ConfigurationError`.
+
 Before the first `INFO` has been received (possible with `retry_on_failed_connect`), the server's
-`max_payload` and header support are unknown. Publishes are buffered without those checks and
-checked when the buffer is replayed; a frame that turns out to be too large is dropped and reported
-as an event.
+`max_payload` and header support are unknown. Publishes are buffered without those checks. One that
+turns out to be too large is refused by the server with a `Maximum Payload Violation` `-ERR`, which
+arrives as an event, and the server closes the connection, which the client recovers from by
+reconnecting.
 
 ### 5.2 Handshake
 
 `Connection::Handshake` runs on the connecting thread with one deadline, `connect_timeout`,
 covering DNS, TCP connect, TLS and the protocol exchange:
 
-1. Resolve the host and try each address until one connects, dividing the remaining time between
-   them.
+1. Resolve the host and connect with `Socket.tcp`, which tries each address in turn, each with the
+   time that remains.
 2. If `tls: { first: true }`, perform the TLS handshake now.
 3. Read `INFO`. Anything else is a `ProtocolError`.
 4. Decide on TLS: upgrade if the client asked for it or the server requires it. If the client
@@ -398,10 +416,12 @@ Reconnect is one loop on one transient thread, started when the socket is lost w
 2. Take the next server from the pool. A server that has failed `max_attempts` times in a row is
    dropped; when the pool is empty, close with `NoServersError`.
 3. After each full pass over the pool, wait `wait` seconds plus a random jitter (`jitter`, or
-   `tls_jitter` over TLS). `reconnect: { delay: ->(attempt) { ... } }` replaces the wait entirely.
-   The wait is a timed queue pop, so `close` and `force_reconnect` interrupt it.
-4. Run the handshake. On failure emit `:reconnect_error`, and if the server reported the same authentication
-   error twice in a row, close: the credentials will not get better by retrying.
+   `tls_jitter` for a `tls://` server). `reconnect: { delay: ->(attempt) { ... } }` replaces the
+   wait entirely. The wait is a timed queue pop, so `close` and `force_reconnect` interrupt it.
+4. Run the handshake. On failure emit `:reconnect_error`. If the failure is an authentication
+   error (`AuthorizationError`, `AuthenticationExpiredError` or `AuthenticationRevokedError`) and
+   this server answered its previous attempt with the same error, close: the credentials will not
+   get better by retrying. The count is kept per server and reset by a successful connect.
 5. On success, in one critical section under the writer's buffer lock: snapshot the registry;
    put a `SUB` for every live subscription, followed by `UNSUB <sid> <remaining>` for those with an
    auto-unsubscribe limit, in front of the reconnect buffer; switch the writer back to normal mode.
@@ -453,8 +473,8 @@ is free and otherwise kicks. The reader thread and the timer thread never write:
 keepalive `PING` is an append and a kick, so neither can block on the socket.
 
 Socket writes use `write_nonblock` in a loop with `IO#wait_writable(remaining)` against one
-deadline per buffer (`write_timeout`, 10 seconds). `IO#timeout=` is not used for writes, because it
-is a single value per socket shared by every thread, and the reader needs it to be infinite. A
+deadline per buffer (`write_timeout`, 10 seconds). `IO#timeout=` is not used, because it is a
+single value per socket shared by every thread, and the reader must wait without a limit. A
 write that fails or times out part way leaves a truncated frame on the wire, so the writer closes
 the socket, which sends the connection into reconnect.
 
@@ -468,8 +488,10 @@ Anything detached for writing when the socket dies is discarded, not replayed: t
 know how much of it the server processed, and replaying could deliver duplicates or half a frame.
 
 Over WebSocket with compression, one WebSocket message must inflate to no more than the server's
-`max_payload`, so the WebSocket transport splits a large buffer into messages below that size at
-frame boundaries of its own choosing; NATS frame boundaries carry no meaning to the server there.
+`max_payload`, and a transport is opened before `INFO` says what that is. The WebSocket transport
+therefore cuts every buffer into messages of at most 32 KiB (`WebSocket::MAX_MESSAGE_SIZE`), which
+is below any plausible `max_payload` and equals the deflate window. It cuts wherever the limit
+falls; NATS frame boundaries carry no meaning to the server there.
 
 The measured reasons for the buffer size and the kick are recorded in the code.
 
@@ -484,8 +506,9 @@ the dispatcher, which does the minimum per frame:
 - `PONG`: pop the oldest entry of the PONG FIFO and, if it is a waiter rather than a keepalive
   placeholder, release it. Reset the outstanding-ping count.
 - `INFO`: replace the server info, update the pool, emit `:lame_duck` or `:servers_discovered`.
-- `-ERR`: map to a `ServerError` subclass and emit `:error`. The reader does not act on the text;
-  if the server closes the socket, the read returns EOF and reconnect starts.
+- `-ERR`: map to a `ServerError` subclass and emit `:error`. A permissions violation that names a
+  subscription is also recorded on that subscription (5.6). The reader does not otherwise act on the
+  text; if the server closes the socket, the read returns EOF and reconnect starts.
 
 A parse failure marks the parser broken and ends the loop the same way as EOF.
 
@@ -502,12 +525,13 @@ stays near full does not flap. A subscription whose `SUB` the server refused wit
 violation gets that error as an event and from its next `next` call, and stays registered so a
 later reconnect with new permissions can succeed.
 
-**A resolver** is a registry entry with no queue and no worker, used by library components that
-must not be starved by user handlers: the request mux, `request_many`, the async publish ack
-collector, the single-shot `fetch`, and the pull engine's consume loop. Its `deliver` runs on the reader thread and only does a hash lookup and a
-queue push or counter update. `Client#resolver(subject) { |msg| ... }` creates one; it is internal
-API, documented as such, and the block must obey the reader-thread rule. Appending a frame to the
-write buffer is allowed from a resolver, since it cannot block (5.4).
+**A resolver** is a registry entry with no queue and no worker, used by library components that must
+not be starved by user handlers: the request mux, `request_many`, the async publish ack collector,
+the single-shot `fetch`, and the pull engine's consume loop. Its `deliver` runs on the reader thread
+and only does a hash lookup and a queue push or counter update.
+`Client#resolver(subject) { |msg| ... }` creates one; it is internal API, documented as such, and
+the block must obey the reader-thread rule. Appending a frame to the write buffer is allowed from a resolver, since it
+cannot block (5.4).
 
 This split is what keeps reply latency independent of user code. A request's reply goes reader
 thread → waiter queue → requester, with one thread handoff.
@@ -515,23 +539,28 @@ thread → waiter queue → requester, with one thread handoff.
 ### 5.7 Keepalive
 
 `Connection::Keepalive` sends a `PING` every `ping_interval` (120 seconds). If `max_pings_out` (2)
-PINGs are outstanding when the timer fires, the connection is stale: the timer reports the socket as lost to
-`Lifecycle`, which records the transition and hands the rest to the reconnect thread (12.2). Any PONG resets the count. Each keepalive `PING` puts a placeholder in the PONG
-FIFO in the same critical section as the append, so its PONG is never mistaken for the answer to a
-caller's `flush`. The timer is an entry in the connection's `Timer` (5.10), not a thread of its
-own, and its callback only appends and kicks.
+PINGs are outstanding when the timer fires, the connection is stale: the timer reports the socket as
+lost to `Lifecycle`, which records the transition and hands the rest to the reconnect thread (12.2).
+Any PONG resets the count. Each keepalive `PING` puts a placeholder in the PONG FIFO in the same
+critical section as the append, so its PONG is never mistaken for the answer to a caller's `flush`.
+The timer is an entry in the connection's `Timer` (5.10), not a thread of its own, and its callback
+only appends and kicks.
 
 ### 5.8 Flush, drain, close
 
 - **`flush(timeout: 10)`** registers a waiter in the PONG FIFO and appends a `PING` in one critical
   section under the buffer lock, writes, then pops the waiter. The server answers a PING only
   after processing everything sent before it.
-- **`Subscription#drain(timeout: 30)`** sends `UNSUB`, round trips a flush so no more messages are
+- **`Subscription#drain(timeout:)`** sends `UNSUB`, round trips a flush so no more messages are
   in flight, lets the worker empty the queue, then closes the subscription. It blocks until done
-  and raises `TimeoutError` if the deadline passes, after closing anyway.
-- **`Client#drain(timeout: 30)`** enters `:draining`, drains every subscription in parallel, then
-  the request mux, then flushes pending publishes and closes. New subscriptions are refused while
-  draining; publishing stays allowed until the subscriptions are done, so handlers can still reply.
+  and raises `TimeoutError` if the deadline passes, after closing anyway. The default timeout is
+  the client's `drain_timeout` (30 seconds).
+- **`Client#drain(timeout:)`** enters `:draining`, sends `UNSUB` for every subscription, flushes,
+  waits for each subscription's worker to empty its queue, then flushes pending publishes and
+  closes. New subscriptions are refused while draining; publishing stays allowed until the
+  subscriptions are done, so handlers can still reply. A second `drain` while one is in progress
+  waits for the first to finish, bounded by its own timeout, and returns. A `drain` without a live
+  connection closes the client and raises `DisconnectedError`.
 - **`close`** is immediate: it writes what is in the buffer without waiting for the server, shuts
   the socket down in both directions and closes it, joins the reader and flusher, releases every
   waiter with `ConnectionClosedError`, closes subscriptions, and emits `:close`. It is idempotent.
@@ -540,13 +569,13 @@ own, and its callback only appends and kicks.
 
 **Calling these from a handler.** A thread never waits for itself. `Subscription#drain` called from
 that subscription's own block stops intake, returns at once, and the subscription closes after the
-block returns and the queue is empty. `Client#drain` and `close` called from any tether thread (a
-subscription block, an event handler) start the work on a helper thread and return; completion is
-observable through `on_close`. `close` skips joining whichever thread it is called from.
+block returns and the queue is empty. `Client#drain` called from any tether thread (a subscription
+block, an event handler) starts the work on a helper thread and returns; completion is observable
+through `on_close`. `close` runs on the calling thread and skips joining it.
 
 ### 5.9 Events
 
-`Connection::Events` replaces `ErrorHolder`. Handlers are registered with a block, several may be
+`Connection::Events` holds the handlers. They are registered with a block, several may be
 registered for the same event, and each registration returns a handle whose `cancel` removes it:
 
 ```ruby
@@ -567,62 +596,74 @@ registration.cancel
 Events are queued and delivered one at a time, in order, on a dedicated event thread, outside
 every internal lock. The thread starts with the first registration and, at close, exits only after
 delivering `:close`. A handler may call back into the client freely. A handler that raises is
-caught; the exception is written to the client's `logger` and delivery continues. Repeats of the
-same error for the same source are coalesced while the queue holds more than a thousand entries, so
-a handler that raises on every message, or a publisher hitting a permissions violation in a loop,
-cannot grow the queue without bound. `nc.last_error` returns the most recent asynchronous error.
+caught; the exception is written to the client's `logger` and delivery continues. The queue is
+bounded at 10,000 entries (`Events::QUEUE_LIMIT`) and an event that finds it full is dropped, so a
+handler that raises on every message, or a publisher hitting a permissions violation in a loop,
+cannot grow the queue without bound. An event nobody registered for is not queued at all; an error
+without an `on_error` handler goes to the `logger`. `nc.last_error` returns the most recent
+asynchronous error, whether or not it was delivered.
 
-Handlers that belong to something narrower than the connection run on that thing's own worker, not
-the event thread: a subscription's `on_close`, a consume loop's `on_error`, a watcher's `on_ready`,
-a service's `on_stop`. That keeps their ordering relative to the messages they concern.
+Handlers that belong to something narrower than the connection do not run on the event thread: a
+consume loop's `on_error` and a watcher's `on_ready` run on that loop's worker, and a
+subscription's `on_close` and a service's `on_stop` run on the thread that ends them. That keeps
+their ordering relative to the messages they concern.
 
 **Internal listeners.** A consume loop must issue a fresh pull after a reconnect, and an ordered
 consumer must recreate itself. If they used `on_reconnect`, a slow user handler ahead of them in
 the queue would delay recovery, and every loop would leave a handler behind. They use
-`Client#listen { |event| ... }` instead, an internal seam that returns a cancellable handle and is
-invoked on the thread making the transition. A listener must not block: it posts to its
+`Client#listen { |event, detail| ... }` instead, an internal seam that returns a cancellable handle
+and is invoked on the thread making the transition (`:connect`, `:disconnect`, `:reconnect`,
+`:reconnect_error`, `:close`). A listener must not block: it posts to its
 owner's control queue and returns.
 
 ### 5.10 Timer
 
 Heartbeat monitors, the ping interval, async publish ack timeouts and ordered consumer backoff all
-need "call this in N seconds". `Connection::Timer` is one thread per connection with a min-heap of
-deadlines, sleeping in `ConditionVariable#wait` until the earliest. A callback may append a frame
-to the write buffer or post to a queue, and nothing else; neither can block. Anything more is done
-by the worker that owns the queue. This avoids
-both a thread per timeout and a dependency on an external scheduler.
+need "call this in N seconds". `Connection::Timer` is one thread per connection, started with the
+first entry, that keeps the entries by due time and sleeps in `ConditionVariable#wait` until the
+earliest. A callback may append a frame to the write buffer or post to a queue, and nothing else;
+neither can block. Anything more is done by the worker that owns the queue. This avoids both a
+thread per timeout and a dependency on an external scheduler.
 
 ### 5.11 Transports, TLS and authentication
 
-`Connection::Transport` is the interface: `open(deadline)`, `read`, `write`, `close`, `closed?`,
-`upgrade_to_tls(context, hostname, deadline)`. There are two implementations.
+`Connection::Transport` is the interface: `open(deadline)`, `read(deadline)`,
+`write(data, deadline)`, `close`, `closed?`, `tls?`, `upgrade_to_tls(context, hostname, deadline)`
+and `abandon`, which drops an inherited descriptor after a fork (5.12). There are two
+implementations.
 
-- **TCP** (exists) with `TCP_NODELAY` and `IO#timeout=`.
+- **TCP** with `TCP_NODELAY`, non-blocking reads and writes, and `IO#wait_readable` and
+  `IO#wait_writable` against the deadline.
 - **WebSocket** for `ws://` and `wss://` (default ports 80 and 443): TLS first when the scheme is
   `wss`, then the HTTP upgrade, masked binary client frames, reassembly of server frames into the
-  byte stream the parser expects, answering ping frames, and sending and honoring close frames. It
-  is implemented from RFC 6455 with the standard library only (`Zlib` for compression, `pack("m0")`
-  for base64). TCP and WebSocket URLs cannot be mixed in one pool. Options live under `websocket:`:
+  byte stream the parser expects, answering ping frames, and sending and honoring close frames.
+  Masking is dropped only when the caller asks for it with
+  `headers: { "Nats-No-Masking" => "true" }` and the server answers with the same header. It is
+  implemented from RFC 6455 with the standard library only (`Zlib` for compression, `pack("m0")` for
+  base64). TCP and WebSocket URLs cannot be mixed in one pool. Options live under `websocket:`:
   `compression: true` requests `permessage-deflate` and requires the server to agree to no context
   takeover in both directions; `path:` overrides the URL path, for servers behind a proxy;
   `headers:` adds headers to the upgrade request, which is also how cookie-based authentication is
-  supplied.
+  supplied. NATS-level TLS negotiation does not apply: TLS on a WebSocket connection is chosen by
+  the `wss` scheme alone.
 
 **TLS** options live under `tls:`:
 
 ```ruby
 Tether.connect("tls://nats.example.com",
-  tls: { ca_file: "ca.pem", cert_file: "client.pem", key_file: "client.key",
-         verify: true, first: false, min_version: :TLS1_2, context: nil })
+  tls: { ca_file: "ca.pem", ca_path: nil, cert_file: "client.pem", key_file: "client.key",
+         verify: true, first: false, min_version: :TLS1_2, hostname: nil, context: nil })
 ```
 
 `tls: true` is the same as `tls: {}`: TLS with the defaults. `tls: nil` or `false` means TLS only
 if a URL scheme or the server demands it. A `tls://` or `wss://` scheme, or a `tls:` hash, makes
 TLS required. Verification is on by
-default and checks the hostname; `context:` accepts a ready `OpenSSL::SSL::SSLContext` for anything
-unusual. The TLS handshake runs with the connect deadline.
+default and checks the hostname; `hostname:` overrides the name sent as SNI and verified, and
+`context:` accepts a ready `OpenSSL::SSL::SSLContext` for anything unusual. `min_version:` is left
+to OpenSSL's default unless given. The TLS handshake runs with the connect deadline.
 
-**Authentication** sources, at most one of which may be given beyond URL userinfo:
+**Authentication** sources, at most one of which may be given beyond URL userinfo; a second one
+is an `ArgumentError` when the client is built:
 
 | Option | Mechanism |
 |---|---|
@@ -638,7 +679,8 @@ A literal value and a file are separate options, so nothing guesses whether a st
 Each of `token:`, `user:`, `password:`, `jwt:` and `nkey_seed:` also accepts a callable, invoked on
 every connect. Files are re-read on each connect too, so rotated credentials are picked up by a
 reconnect.
-Userinfo in a server's URL takes precedence for that server. NKEY support needs no gem: a seed is
+Userinfo in a server's URL takes precedence for that server. A credential that cannot be read or
+decoded raises `CredentialsError`. NKEY support needs no gem: a seed is
 base32 decoded and CRC checked, and the Ed25519 signature is produced by OpenSSL. The signature
 covers the nonce's text exactly as it appears in `INFO` and is sent base64url encoded without
 padding.
@@ -698,13 +740,14 @@ nc = Tether.connect("nats://a.example.com,nats://b.example.com",
   token: nil, user: nil, password: nil, nkey_seed: nil, credentials: nil,
   tls: nil, logger: nil)
 
-Tether.connect { |nc| nc.publish("greet", "hello") }   # yields, then closes
+Tether.connect { |nc| nc.publish("greet", "hello") }   # yields, closes, returns the block's value
 ```
 
 - The first argument is one URL, a comma-separated list, or an array. With none, `NATS_URL` is
   read, then `nats://127.0.0.1:4222`. This is the only environment variable tether reads, and an
   explicit argument always wins.
-- `Tether.connect` returns a connected client or raises. `reconnect: false` disables reconnect.
+- `Tether.connect` returns a connected client or raises the last failure after trying every server
+  once. `reconnect: false` disables reconnect.
   `retry_on_failed_connect: true` returns a client in `:reconnecting` when no server is reachable
   yet, which suits a process that starts before its broker.
 - Options are validated once into a frozen `Tether::Options`. An unknown key raises
@@ -770,7 +813,7 @@ sub = nc.subscribe("orders.*") { |msg| handle(msg) }               # worker thre
 sub = nc.subscribe("jobs", queue: "workers") { |msg| work(msg) }   # queue group
 sub = nc.subscribe("events")                                       # no block: pull messages yourself
 
-msg = sub.next(timeout: 5)               # raises Tether::TimeoutError
+msg = sub.next(timeout: 5)               # raises Tether::TimeoutError; without timeout: waits indefinitely
 sub.each { |msg| ... }                   # blocks until the subscription ends
 sub.each(idle_timeout: 1) { |msg| ... }  # returns when nothing has arrived for a second
 ```
@@ -783,12 +826,14 @@ order).
 `queue`, `sid`, `pending`, `pending_bytes`, `delivered`, `dropped`, `closed?`, `draining?`,
 `on_close { }`. `closed?` becomes true when the subscription ends for any reason, including the
 connection closing. `timeout:` on a single-message call raises when it expires; `idle_timeout:` on
-an iteration ends it. A subscription has `each` but is not `Enumerable`, because it has no end.
+an iteration ends it. `next` on a subscription that has ended and has nothing left raises
+`SubscriptionClosedError`. A subscription has `each` but is not `Enumerable`, because it has no
+end.
 
-`Msg` is frozen apart from its lazily parsed headers: `subject`, `data`, `reply_to`, `headers`,
-`status`, `description`, `no_responders?`, `subscription`, `respond(payload = nil, headers: nil)`,
-`size`. `respond` never copies the request's headers into the reply, and raises `Tether::Error`
-when the message has no reply subject.
+`Msg` has readers only: `subject`, `data`, `reply_to`, `headers` (parsed lazily, `nil` when the
+message has none), `status`, `description`, `no_responders?`, `empty?`, `subscription`,
+`respond(payload = nil, headers: nil)`, `size`. `respond` never copies the request's headers into
+the reply, and raises `Tether::Error` when the message has no reply subject.
 
 A block that raises does not end the subscription. The exception becomes a `HandlerError` event
 carrying the message and the cause, and the next message is delivered.
@@ -807,15 +852,19 @@ inbox = nc.new_inbox                                        # "_INBOX.<22 chars>
 
 `request` raises `NoRespondersError` immediately when nobody subscribes to the subject,
 `TimeoutError` when the deadline passes, and `DisconnectedError` when the connection is lost while
-waiting. `request_many` publishes when called and collects replies until `max` have arrived, no
-reply has arrived for `stall` seconds, the deadline passes, or the `sentinel:` callable returns
-true for a reply, following the request-many conventions in ADR-47. It returns them as an array, or
-yields each to a block as it arrives. Running out of time is the normal way for it to end, so it
+waiting. The default timeout of both calls is 2 seconds. `request_many` publishes when called and
+collects replies until `max` have arrived, no reply has arrived for `stall` seconds, the deadline
+passes, or the `sentinel:` callable returns true for a reply (which is not included), following the
+request-many conventions in ADR-47. `stall:` applies only between replies: the first reply has the
+whole deadline, because a responder's time to first answer says nothing about the gap between
+answers. It returns the replies as an array, or yields each to a block as it arrives and returns
+how many there were. Running out of time is the normal way for it to end, so it
 does not raise `TimeoutError`; a no-responders status ends it and raises `NoRespondersError` only
 if nothing was received. It uses a dedicated resolver rather than the mux, so many replies do not
 flow through a single-slot waiter.
 
-All single requests share one resolver on `<inbox_prefix>.<nuid>.*`, created on first use.
+All single requests share one resolver on `<inbox_prefix>.<nuid>.*`, created on first use. A
+connection lost while requests are waiting releases every one of them with `DisconnectedError`.
 
 ### 6.5 Introspection and control
 
@@ -824,7 +873,7 @@ nc.status            # :connected
 nc.server_info       # Tether::ServerInfo: id, name, version, host, port, cluster, max_payload,
                      #   headers?, jetstream?, api_level, domain, client_id, client_ip, account, ...
 nc.servers           # the pool: [#<Server url: discovered?: attempts:>]; nc.servers = [...] replaces it
-nc.user_info         # who the server says this connection is: account, user, permissions, expiry
+nc.user_info         # a Hash of who the server says this connection is: account, user, permissions, expiry
 nc.max_payload
 nc.stats             # Tether::Stats
 nc.rtt               # seconds
@@ -833,6 +882,7 @@ nc.flush(timeout: 10)
 nc.force_reconnect
 nc.drain(timeout: 30)
 nc.close
+nc.after_fork        # replace an inherited connection now (5.12)
 ```
 
 ---
@@ -851,7 +901,7 @@ JetStream ──▶ Stream ──▶ Consumer ──▶ Message
     │            │           ├── consume { }         continuous, callback
     │            │           └── messages            continuous, iterator
     │            └── ordered_consumer
-    ├── publish / publish_async / batch / counter
+    ├── publish / publish_async / batch / fast_batch / counter
     ├── key_value / object_store
     └── account_info
 ```
@@ -868,9 +918,11 @@ the async publish settings (7.4): `publish_async_max_pending:`, `publish_async_t
 and honors a `Nats-Required-Api-Level` header on API requests, pull requests, direct gets and batch
 messages, refusing those it is too old for. Each schema field and each operation in tether records
 the level that introduced it. When a request uses anything above level 0, tether sends the header
-with the highest level it used, so an older server answers with a clear
-`RequiredApiLevelError` where it would otherwise ignore the unknown field and behave differently
-from what was asked. `nats.go` has no such check; this is one place tether does more.
+with the highest level it used, so an older server answers with a clear `RequiredApiLevelError`
+where it would otherwise ignore the unknown field and behave differently from what was asked. An API
+request that gets no answer at all, because JetStream is not enabled or has no leader, raises
+`ServiceUnavailableError`, which is `retryable?`. `nats.go` has no such check; this is one place
+tether does more.
 
 ### 7.2 Configuration and info objects
 
@@ -892,13 +944,18 @@ end
 ```
 
 From the table a `Schema` class gets: a keyword initializer that rejects unknown keys; readers;
-`to_h` and `to_json` that emit only fields that were set, so older servers never see a field they
-would reject; `from_json` that converts durations to seconds, timestamps to `Time`, enum strings to
-symbols and nested structs to their classes; `with(**changes)` returning a modified copy; `==`;
+`to_h` and `to_json` that emit only fields that were set, in wire form, so older servers never see
+a field they would reject; `from_h` that converts durations to seconds, timestamps to `Time`, enum
+strings to symbols and nested structs to their classes; `coerce`, which accepts an instance or a
+hash of keywords; `with(**changes)` returning a modified copy; `==`;
 and `raw`, the decoded hash with every key the server sent, including ones tether does not know.
 `with` and `to_json` carry unknown keys through, so reading a config from a newer server and
 writing it back does not turn features off. The `_nats.*` keys the server adds to `metadata` are
 kept out of `==` and are not sent back on update.
+
+Ruby names spell words out where the wire abbreviates them: `max_messages` for `max_msgs`,
+`max_message_size`, `max_messages_per_subject`, `allow_message_ttl`, `allow_message_counter`,
+`allow_message_schedules`, `replicas` for `num_replicas`, `durable` for `durable_name`.
 
 Methods that take a config accept keywords directly, so the class rarely needs naming:
 
@@ -917,14 +974,14 @@ js.stream?("ORDERS")
 js.delete_stream("ORDERS")
 js.streams(subject: "orders.*")                    # lazy Enumerator of Stream, paged underneath
 js.stream_names(subject: nil)                      # lazy Enumerator of String
-js.stream_name_for("orders.created")
+js.stream_name_for("orders.created")               # => String or nil
 js.account_info                                    # AccountInfo: memory, storage, streams, consumers, limits, api, tiers
 
 stream.name
 stream.info(deleted_details: false, subjects: "orders.>")   # fresh StreamInfo; subject paging handled
 stream.cached_info
 stream.config ; stream.state                        # from the cached info
-stream.update(max_age: 3600)                        # merges into the current config
+stream.update(max_age: 3600)                        # reads the current config, merges, writes it back
 stream.purge(subject: "orders.eu.>", keep: 10)      # or sequence:; returns the purged count
 stream.get(42)                                      # StoredMessage by sequence
 stream.get(last_for: "orders.eu.1")
@@ -934,7 +991,7 @@ stream.last_messages(["orders.eu.>", "orders.us.>"], up_to_sequence: nil, up_to_
 stream.delete_message(42, erase: true)
 stream.delete
 stream.step_down(placement: nil) ; stream.remove_peer(name)
-stream.snapshot(no_consumers: false, chunk_size: nil) { |chunk| io.write(chunk) }
+config, state = stream.snapshot(no_consumers: false, chunk_size: nil) { |chunk| io.write(chunk) }
 js.restore_stream(config, state) { |writer| writer.write(io.read(64 * 1024)) until io.eof? }
 ```
 
@@ -947,7 +1004,8 @@ Listing methods return lazy enumerators, so `js.streams.first(3)` fetches one pa
 to request the next page against a consistent view. `last_messages` is the multi-subject form
 (`multi_last`), returning the last message for each subject that matches, and raises
 `TooManyResultsError` when the server answers `413` because the filters match more than its limit
-of subjects. Both need `allow_direct` on the stream.
+of subjects. Both need `allow_direct` on the stream and raise `ServiceUnavailableError` without it,
+since nothing answers a Direct Get there.
 
 `delete_message` erases by default, overwriting the message's bytes on disk, as the server does
 when not told otherwise; `erase: false` only marks it deleted, which is faster.
@@ -956,6 +1014,12 @@ when not told otherwise; `erase: false` only marks it deleted, which is faster.
 yields chunks, acknowledging each so the server sends the next, and returns the stream's config and
 state when the server signals the end; `restore_stream` sends what the block writes in chunks,
 waiting for each acknowledgement.
+
+**Timeouts of streaming operations.** `each_message`, `snapshot`, `restore_stream`, the listing
+enumerators, the batches of 7.4 and Object Store `get` and `put` make an open-ended number of round
+trips, so one number of seconds cannot sensibly bound all of them. For these, a numeric `timeout:`
+bounds each wait on the server (one page, one chunk, one acknowledgment), and a `Deadline` bounds
+the whole operation. Everywhere else a number and a `Deadline` mean the same thing.
 
 ### 7.4 Publishing
 
@@ -978,6 +1042,7 @@ A synchronous publish is a request. A server error in the ack raises the mapped 
 subclass, for example `WrongLastSequenceError`. No responders means no stream captures the subject
 or its leader is momentarily absent, so the publish is sent again up to `retries` more times,
 `retry_wait` apart (three attempts in all by default), before raising `NoStreamResponseError`.
+`timeout:` covers every attempt together.
 
 **Asynchronous publish** for throughput:
 
@@ -985,7 +1050,7 @@ or its leader is momentarily absent, so the publish is sent again up to `retries
 future = js.publish_async("orders.created", payload, msg_id: "order-2")
 future.value(timeout: 5)        # => PubAck, or raises what the server answered
 future.wait(timeout: 5)         # => true/false, never raises
-future.done? ; future.error
+future.done? ; future.error ; future.subject
 
 js.pending_publishes                    # how many acks are outstanding
 js.wait_for_publishes(timeout: 10)      # => true when all are resolved, false on timeout
@@ -994,10 +1059,16 @@ js.on_publish_error { |future| ... }    # a failed future: future.subject, futur
 
 All async acks arrive on one resolver subscription and are matched to futures by reply token. At
 most `publish_async_max_pending` (4,000) are in flight; beyond that `publish_async` blocks for up
-to `stall: 0.2` seconds and then raises `TooManyStalledMessagesError`. A future that gets no ack
-within `publish_async_timeout` (off by default) fails with `TimeoutError`. When the connection
-drops, in-flight futures fail with `DisconnectedError` rather than being resent, because a resend
-could reorder messages; a caller that wants retries supplies `msg_id:` and republishes.
+to `stall: 0.2` seconds and then raises `TooManyStalledMessagesError` without sending. A future
+that gets no ack within `publish_async_timeout` (off by default) fails with `TimeoutError`.
+`value` and `wait` default to the context's timeout, and a `value` that times out leaves the
+future pending. `on_publish_error` holds one handler, which a later call replaces, and runs it on
+a worker thread of its own.
+
+An asynchronous publish is never sent twice. When nothing answers it the future fails with
+`NoStreamResponseError` instead of retrying as `publish` does, and when the connection drops,
+in-flight futures fail with `DisconnectedError`: a resend could reorder messages. A caller that
+wants retries supplies `msg_id:` and republishes.
 
 **Atomic batches**, for streams with `allow_atomic`:
 
@@ -1006,41 +1077,50 @@ ack = js.batch do |batch|
   batch.publish("orders.created", a)
   batch.publish("orders.paid", b, expect: { last_subject_sequence: 3 })
 end                                       # commits on block exit; raises and stores nothing on failure
-ack.batch_id ; ack.count
+ack.batch_id ; ack.count                  # ack is nil when the block published nothing
 ```
 
-The block form guarantees a batch is always committed or abandoned. An exception inside the block
+The block is given a `JetStream::PublishBatch` (`Batch` is the result of a fetch, 7.5), and the
+block form guarantees a batch is always committed or abandoned. An exception inside the block
 abandons it. The batch id is generated. The first message is sent as a request, because the server
 reports a refused batch on it; the rest are plain publishes; and the commit is the empty `eob`
 form, so the batch never has to hold a message back to learn that it is the last. `batch.publish`
 takes the same options as `js.publish` except `expect: { last_msg_id: }`, which the server rejects
 inside a batch and tether rejects first. `batch.size` is checked against the server's limit of
-1,000 messages. The server abandons a batch idle for ten seconds, so a block that stalls fails at
-commit with `IncompleteBatchError`.
+1,000 messages, and the publish that would exceed it raises `BatchTooLargeError`. The server
+abandons a batch idle for ten seconds, so a block that stalls fails at commit with
+`IncompleteBatchError`. `timeout:` bounds each exchange with the server, not the block.
 
 **Fast-ingest batches**, for streams with `allow_batched` (API level 4), trade the all-or-nothing
 guarantee for throughput:
 
 ```ruby
-ack = js.fast_batch(gap: :fail, flow: 100) do |batch|
+ack = js.fast_batch(gap: :fail, flow: 100, windows: 2) do |batch|
   rows.each { |row| batch.publish("ingest.rows", row) }
+  batch.acknowledged             # the highest batch sequence the server has acknowledged
+  batch.errors                   # per-message failures: [#<Failure sequence:, error:>], with gap: :ok
+  batch.gaps                     # ranges of batch sequences the server did not receive, with gap: :ok
 end
-ack.count ; ack.sequence
-batch.errors                     # per-message failures reported by the server
-batch.gaps                       # ranges the server did not receive, with gap: :ok
+ack.count ; ack.sequence         # the last batch sequence accepted, and its stream sequence
 ```
 
-All control information travels in the reply subject of each publish, on a dedicated inbox. Tether
-waits for the server's first flow acknowledgement before sending more, then keeps at most three
-acknowledgement windows outstanding, pausing `batch.publish` when it gets ahead. With `gap: :fail`
-the first lost message or per-message error ends the batch and raises; with `gap: :ok` they are
-collected and the batch continues.
+All control information travels in the reply subject of each publish, on a dedicated inbox. The
+block is given a `JetStream::FastBatch`. Tether waits for the server's first flow acknowledgement
+before sending more, then lets the batch run at most `windows:` acknowledgement windows ahead of
+the server (1 to 3, 2 by default, as ADR-50 recommends), pausing `batch.publish` when it gets
+further: a message is sent only while its batch sequence is at most the last acknowledged sequence
+plus `windows` times the server's current cadence. `flow:` is the largest cadence the server may
+choose. When an expected acknowledgment does not come within a second the batch pings the server,
+and `timeout:` bounds each such wait. With `gap: :fail` the first lost message raises
+`MessageGapError` and the first refused one raises its `APIError`, ending the batch; with
+`gap: :ok` they are collected and the batch continues. Messages are stored as they arrive, so a
+batch that fails part way leaves what it already stored in the stream.
 
-**Counters**, for streams with `allow_msg_counter`:
+**Counters**, for streams with `allow_message_counter`:
 
 ```ruby
 counter = js.counter("hits.home")               # stream: is looked up from the subject and cached
-counter.increment(5)                            # => Integer, the new total; may be negative
+counter.increment(5)                            # => Integer, the new total; the delta may be negative
 counter.value                                   # => Integer, or nil when never incremented
 counter.sources                                 # per-source totals on an aggregating stream
 ```
@@ -1048,7 +1128,7 @@ counter.sources                                 # per-source totals on an aggreg
 Totals are arbitrary-precision on the server and travel as strings; Ruby integers are too, so
 nothing is lost.
 
-**Scheduled messages**, for streams with `allow_msg_schedules`:
+**Scheduled messages**, for streams with `allow_message_schedules`:
 
 ```ruby
 js.publish("schedules.report", payload,
@@ -1069,13 +1149,15 @@ Purging that subject (`stream.purge(subject:)`) also cancels it.
 ```ruby
 consumer = stream.create_consumer(durable: "billing", ack_policy: :explicit,
                                   filter_subjects: ["orders.eu.>"], max_deliver: 5, ack_wait: 30)
-consumer = stream.create_or_update_consumer(name: "billing", ...)
-consumer = stream.update_consumer(name: "billing", ...)
+consumer = stream.create_or_update_consumer(durable: "billing", ...)
+consumer = stream.update_consumer(durable: "billing", ...)        # the whole config, not a merge
 consumer = stream.consumer("billing")              # looks up; raises ConsumerNotFoundError
+stream.consumer?("billing")
 consumer = stream.create_consumer(filter_subjects: ["orders.>"])   # no name: ephemeral, name generated
 stream.consumers ; stream.consumer_names           # lazy enumerators
 stream.delete_consumer("billing")
 
+consumer.name ; consumer.stream
 consumer.info ; consumer.cached_info ; consumer.config
 consumer.pause_until(Time.now + 600) ; consumer.resume
 consumer.reset(sequence: nil) ; consumer.unpin(group) ; consumer.step_down
@@ -1083,6 +1165,14 @@ consumer.delete
 ```
 
 `stream.consumer` only ever reads. Anything that creates server state has `create` in its name.
+
+`durable:` names a consumer that stays until it is deleted. `name:` alone names an ephemeral one,
+which the server removes after its `inactive_threshold` without pulls, and no name at all
+generates one. When both are given they must be equal. An update replaces the whole
+configuration, so `update_consumer` on a durable consumer has to say `durable:` again: with
+`name:` alone the configuration sent no longer carries the durable name. Defaults filled in when
+omitted are `ack_policy: :explicit`, `replay_policy: :instant` and a `deliver_policy` derived from
+`start_sequence:` or `start_time:`, otherwise `:all`.
 
 `js.create_consumer("ORDERS", ...)` and the other stream-level calls also exist on the context,
 taking the stream name first, for code that does not hold a `Stream`.
@@ -1096,7 +1186,7 @@ push consumer cannot be created by accident. A push consumer made by another cli
 **Fetch**: one pull request, a bounded result.
 
 ```ruby
-batch = consumer.fetch(10, timeout: 5)                  # => Batch, possibly fewer, possibly empty
+batch = consumer.fetch(10, timeout: 5)                  # => Batch, possibly fewer, possibly empty; 30 s default
 batch = consumer.fetch(10, timeout: 5, max_bytes: 1_048_576)
 batch = consumer.fetch(10, wait: false)                 # no_wait: whatever is available now
 batch = consumer.fetch(10, wait: false, timeout: 5)     # no_wait with expires: wait only if empty
@@ -1111,12 +1201,14 @@ Each call uses its own resolver on a fresh inbox, so any number of threads may f
 `Consumer` at once without seeing each other's messages or statuses. A `Batch` is `Enumerable`.
 `fetch` returns what it has when the batch is complete, the server ends the pull, or the deadline
 passes. Finding nothing is not an error, so an empty batch is returned, not raised; a status that
-ends the consumer (deleted, or a bad request) raises when no message was received and is otherwise
+ends the pull abnormally (`ConsumerDeletedError`, a `PullError` carrying the server's status, a
+`NoHeartbeatError` when the pull went silent) raises when no message was received and is otherwise
 left on `batch.error`, so messages already delivered are never thrown away.
 
 The pull's `expires` is the caller's timeout less a margin of ten percent, at most one second, so
 the server's `408` normally arrives before the client's own deadline, which is `timeout` itself.
-With a timeout of ten seconds or more, a five second idle heartbeat detects a dead pull early. The
+With an `expires` of ten seconds or more, a five second idle heartbeat detects a dead pull early;
+`heartbeat:` sets another interval, at most half of the timeout. The
 pin id of a pinned-client priority group belongs to the `Consumer` handle, so fetches from several
 threads share it.
 
@@ -1132,9 +1224,13 @@ end
 consuming.on_error { |error| ... }     # warnings and terminal errors for this loop
 consuming.stop                         # stop now; buffered messages are discarded
 consuming.drain(timeout: 30)           # stop pulling; finish buffered messages
-consuming.wait                         # block until it ends; raises if it ended with an error
-consuming.stopped?
+consuming.wait(timeout: nil)           # block until it ends; raises if it ended with an error
+consuming.stopped? ; consuming.error
 ```
+
+Without an `on_error` handler, a loop's warnings and errors go to the connection's `on_error`. An
+exception raised by the block is reported there too, as a `HandlerError` carrying the message, and
+the loop continues.
 
 **Messages**: the same engine, driven by the caller.
 
@@ -1142,17 +1238,20 @@ consuming.stopped?
 consumer.messages(max_messages: 100).each { |msg| process(msg); msg.ack }
 
 iterator = consumer.messages
-msg = iterator.next(timeout: 5)
+msg = iterator.next(timeout: 5)        # TimeoutError when none arrives; StopIteration once stopped
 iterator.stop
 ```
 
-`consume` and `messages` share `JetStream::Pull`, which implements the algorithm from
+`consume` and `messages` both return a `JetStream::Pull`, one class with or without a handler. It
+has `each` but is not `Enumerable`. It implements the algorithm from
 [`03-consumers.md`](protocol/03-consumers.md): one inbox for the loop; a pull request for
-`max_messages` with `expires` and an idle heartbeat of half that, capped at 30 seconds; a new pull
+`max_messages` (500) with `expires` (30 seconds, at least 1) and an idle heartbeat of half that,
+kept between half a second and 30 seconds; a new pull
 for the difference whenever the outstanding count falls below `threshold` (half of `max_messages`);
 pending counts corrected from the `Nats-Pending-Messages` and `Nats-Pending-Bytes` headers of
 terminating statuses; a heartbeat monitor; and a fresh pull after a reconnect. `max_bytes:`
-switches the accounting to bytes. `group:`, `min_pending:`, `min_ack_pending:` and `priority:` pass
+switches the accounting to bytes, with a message count of 1,000,000 unless `max_messages:` is given
+too. `group:`, `min_pending:`, `min_ack_pending:` and `priority:` pass
 through for priority groups, and a pin id from the server is remembered and sent with subsequent
 pulls until a pin mismatch clears it.
 
@@ -1185,11 +1284,11 @@ Every status the server can send is classified in one table:
 |---|---|
 | `100 Idle Heartbeat` | activity only |
 | `404 No Messages`, `408 Request Timeout`, `409 Batch Completed`, `409 Message Size Exceeds MaxBytes` | ends that pull; pending counts corrected from its headers |
-| `408 Requests Pending`, `409 Exceeded MaxRequestBatch` and its siblings, `409 Exceeded MaxWaiting` | ends that pull; reported as a warning |
-| `409 Leadership Change`, `409 Server Shutdown` | ends that pull; pull again |
-| `423` pin mismatch | clears the stored pin id; pull again |
-| `503` no responders | the consumer or its leader is unreachable; reported, and the next heartbeat miss retries |
-| `409 Consumer Deleted`, `409 Consumer is push based`, `400 Bad Request`, `412 Required Api Level` | ends the loop with an error |
+| `408 Requests Pending`, `409 Exceeded MaxRequestBatch` and its siblings, `409 Exceeded MaxWaiting`, `409 Server Shutdown`, any other `409` | ends that pull; reported as a warning (`PullError`) |
+| `409 Leadership Change` | every outstanding pull is void; reported, and pulled again |
+| `423` pin mismatch | clears the stored pin id; reported as `PinIdMismatchError`; pull again |
+| `503` no responders | the consumer or its leader is unreachable. The loop asks for the consumer's info: if it is gone the loop ends with `ConsumerDeletedError`; otherwise `ServiceUnavailableError` is reported and the next heartbeat miss retries |
+| `409 Consumer Deleted`, `409 Consumer is push based`, `400 Bad Request`, `412 Required Api Level` | ends the loop with `ConsumerDeletedError`, `PushConsumerError`, `PullError` or `RequiredApiLevelError` |
 
 Loop-ending statuses surface through `on_error`, `wait` and the iterator. Warnings go to `on_error`
 only. An unrecognized status is a warning, so a newer server cannot stop an older client.
@@ -1198,21 +1297,26 @@ only. An unrecognized status is a warning, so a newer server cannot stop an olde
 
 ```ruby
 ordered = stream.ordered_consumer(filter_subjects: ["orders.>"], deliver_policy: :all,
-                                  start_sequence: nil, start_time: nil, headers_only: false)
-ordered.consume { |msg| ... }
+                                  start_sequence: nil, start_time: nil, headers_only: false,
+                                  replay_policy: nil, inactive_threshold: 300, name_prefix: nil)
+ordered.consume(on_caught_up: -> { ... }) { |msg| ... }
 ordered.messages.each { |msg| ... }
-ordered.fetch(100)
+ordered.fetch(100)               # continues after the last message an earlier fetch returned
+ordered.close                    # deletes the server consumer kept between fetches
 ```
 
 `JetStream::Ordered` wraps the pull engine with an ephemeral, memory-backed, `ack_policy: :none`
-consumer. It tracks the last stream and consumer sequence delivered. A consumer sequence that is
-not the previous plus one, a missed heartbeat, a deleted consumer, a no-responders status on a
-pull (how a vanished memory consumer is usually noticed first), or a reconnect makes it create a
-new consumer starting at the last stream sequence plus one, with backoff between attempts, and
-delete the old one in the background so recovery does not wait for it. The user sees an
-uninterrupted ordered stream. `concurrency:` above one is refused, since it would defeat the
-ordering. Key/Value watchers and Object Store readers are built on this class, so the recovery
-logic exists once.
+consumer. It tracks the last stream and consumer sequence delivered. A consumer sequence that is not
+the previous plus one, a missed heartbeat, a deleted consumer, a no-responders status on a pull (how
+a vanished memory consumer is usually noticed first), or a reconnect makes it create a new consumer
+starting at the last stream sequence plus one, with backoff between attempts, and delete the old one
+in the background so recovery does not wait for it. The user sees an uninterrupted ordered stream.
+Nothing exists on the server until `consume`, `messages` or `fetch` is called, and each loop has its
+own server consumer, which it removes when it stops. `on_caught_up:` is called once, when everything
+that existed when the loop's consumer was created has been handed out, which is what a watcher's
+`on_ready` is built on. `concurrency:` above one is refused, since it would defeat the ordering.
+Key/Value watchers and Object Store readers are built on this class, so the recovery logic exists
+once.
 
 ### 7.6 Messages and acknowledgement
 
@@ -1225,7 +1329,7 @@ msg.nak(delay: 30)               # redeliver after 30 seconds
 msg.in_progress                  # +WPI, reset the ack wait timer
 msg.term                         # +TERM, never redeliver
 msg.term(reason: "poison")       # +TERM with a reason
-msg.ack(next: 5)                 # +NXT: acknowledge and request more in one message
+msg.ack(next: 5)                 # +NXT: acknowledge and request more in one message; consume and messages only
 msg.acked?
 msg.marker? ; msg.marker_reason  # a server delete marker (Nats-Marker-Reason), not user data
 
@@ -1238,14 +1342,18 @@ meta.time                        # Time the message was stored
 ```
 
 Metadata is parsed from the `$JS.ACK` reply subject and accepts both the nine-token layout and the
-eleven-or-more-token layout current servers emit. A message may be acknowledged terminally once;
-a second `ack`, `nak` or `term` raises `AlreadyAckedError`, guarded atomically. `in_progress` may
-be sent any number of times. On a message from a consumer with `ack_policy: :none`, which includes
-ordered consumers, the ack methods do nothing, so the same handler works under either policy.
+eleven-or-more-token layout current servers emit. A message may be acknowledged terminally once; a
+second `ack`, `nak` or `term` raises `AlreadyAckedError`, guarded atomically. `in_progress` may be
+sent any number of times. An `ack_sync` that times out leaves the message open, so it may be
+acknowledged again. The ack methods return the message. On a message from a consumer with
+`ack_policy: :none`, which includes ordered consumers, the ack methods do nothing, so the same
+handler works under either policy.
 
 Advisories are ordinary messages on `$JS.EVENT.ADVISORY.>`. Tether does not wrap them beyond
-`js.advisories(kind = nil) { |advisory| ... }`, which subscribes and decodes the JSON into a value
-object with the advisory's `type`.
+`js.advisories(kind = nil) { |advisory| ... }`, which subscribes, decodes the JSON into a value
+object with the advisory's `type`, and returns the `Subscription`. `kind` is `nil` for all of them,
+one of `:api`, `:stream`, `:consumer`, `:server` and `:domain` for a family, or the subject after
+`$JS.EVENT.ADVISORY.`.
 
 ---
 
@@ -1257,15 +1365,19 @@ consumer, as specified in [`04-kv-object-services.md`](protocol/04-kv-object-ser
 ```ruby
 kv = js.create_key_value(bucket: "config", history: 5, ttl: nil, max_bytes: nil, max_value_size: nil,
                          storage: :file, replicas: 1, compression: false, description: nil,
-                         limit_marker_ttl: nil, mirror: nil, sources: nil, placement: nil)
-kv = js.key_value("config")                 # raises BucketNotFoundError
-kv = js.update_key_value(bucket: "config", history: 10)
+                         limit_marker_ttl: nil, mirror: nil, sources: nil, placement: nil,
+                         republish: nil, metadata: nil)   # history defaults to 1
+kv = js.key_value("config")                 # raises BucketNotFoundError, or BadBucketError
+kv = js.update_key_value(bucket: "config", history: 10)   # options not given return to their defaults
 kv = js.create_or_update_key_value(bucket: "config", history: 10)
 js.key_value_names ; js.key_values ; js.delete_key_value("config")
+kv.bucket ; kv.config ; kv.stream
 
 entry = kv.get("region")                    # => Entry or nil; a deleted key is nil
-entry.key ; entry.value ; entry.revision ; entry.created_at ; entry.operation ; entry.delta
-kv.get("region", revision: 3)
+entry.bucket ; entry.key ; entry.value ; entry.revision ; entry.created_at
+entry.operation                             # :put, :delete or :purge; entry.put?, entry.tombstone?
+entry.delta                                 # revisions a watcher still had to deliver; 0 from a get
+kv.get("region", revision: 3)               # nil when that revision belongs to another key
 kv["region"]                                # => value String or nil
 kv["region"] = "eu"                         # put
 kv.fetch("region")                          # raises KeyNotFoundError; kv.fetch("region") { default }
@@ -1273,44 +1385,60 @@ kv.fetch("region")                          # raises KeyNotFoundError; kv.fetch(
 kv.put("region", "eu")                      # => revision Integer
 kv.create("region", "eu", ttl: nil)         # raises KeyExistsError unless absent or deleted
 kv.update("region", "us", revision: 4)      # raises RevisionMismatchError on conflict
-kv.delete("region", revision: nil)          # tombstone, history kept
-kv.purge("region", revision: nil, ttl: nil) # tombstone, history dropped
-kv.purge_deletes(older_than: 1800)
+kv.delete("region", revision: nil)          # tombstone, history kept; => revision of the tombstone
+kv.purge("region", revision: nil, ttl: nil) # tombstone, history dropped; => revision of the tombstone
+kv.purge_deletes(older_than: 1800)          # removes tombstones of that age; => how many
 
 kv.keys                                     # lazy Enumerator of live keys
 kv.keys("config.>")                         # with subject filters
-kv.history("region")                        # Array<Entry>, oldest first
+kv.history("region")                        # Array<Entry>, oldest first; [] for a key never written
 kv.each { |entry| ... }                     # current entries; Enumerable
-kv.status                                   # Status: bucket, values, history, ttl, bytes, compressed?, stream_info
+kv.status                                   # Status: bucket, values, history, ttl, limit_marker_ttl, bytes,
+                                            #   compressed?, backing_store, metadata, config, stream_info
 ```
+
+Creating a bucket that exists with the same options succeeds; with other options it raises
+`BucketExistsError`. Binding to a stream that is named like a bucket but does not keep at least one
+message per subject raises `BadBucketError`.
 
 Watching:
 
 ```ruby
 watcher = kv.watch("region", "limits.>", include_history: false, updates_only: false,
                    ignore_deletes: false, meta_only: false, resume_from: nil,
-                   on_ready: -> { puts "initial values delivered" }) do |entry|
+                   on_ready: -> { puts "initial values delivered" },
+                   on_error: ->(error) { log.warn(error) }) do |entry|
   apply(entry)
 end
 watcher.on_ready { ... }                    # fires at once if already ready
-watcher.ready? ; watcher.wait_until_ready(timeout: 5)
-watcher.stop ; watcher.stopped?
+watcher.on_error { |error| ... }
+watcher.ready? ; watcher.wait_until_ready(timeout: 5)   # => true, or false when time ran out
+watcher.revision                            # the revision of the last entry received
+watcher.stop ; watcher.stopped? ; watcher.wait ; watcher.error
 
 kv.watch.each { |entry| ... }               # without a block, iterate; ends when stopped
+kv.watch.next(timeout: 5)                   # or take one entry; StopIteration once stopped
 ```
 
 The end of the initial values is a state (`ready?`) and an event (`on_ready`), not a `nil` pushed
 through the entry stream. A watcher on an empty bucket is ready as soon as it is created. A watcher
-is an ordered consumer, so it survives reconnects and consumer loss without gaps. `keys` and
-`history` stop their consumer when enumeration ends, completes or not, using `ensure`, so
-abandoning an enumerator leaks nothing.
+is an ordered consumer, so it survives reconnects and consumer loss without gaps. `keys`,
+`history` and `each` stop their consumer when enumeration ends, completes or not, using `ensure`,
+so abandoning an enumerator leaks nothing. Their `timeout:` follows the streaming rule of 7.3: a
+number bounds the wait for each entry, a `Deadline` the whole listing.
+
+Reads are answered by any replica or mirror of the bucket, so a `get` made right after a write may
+still see the previous revision. Where the value just written matters, use the revision the write
+returned.
 
 A revision conflict in `create`, `update`, `delete(revision:)` or `purge(revision:)` raises
 `RevisionMismatchError` (`KeyExistsError`, its subclass, from `create`). The server reports the
 conflict as error 10071 on a single-server stream and as 10164 on a replicated one when another
 write to the same key is in flight; both are translated.
 
-Keys and bucket names are validated by default against the character sets of ADR-6 and ADR-8.
+Keys and bucket names are validated against the character sets of ADR-6 and ADR-8, raising
+`InvalidKeyError` and `InvalidBucketNameError`. Per-key TTLs (`create(ttl:)`, `purge(ttl:)`) need a
+bucket with `limit_marker_ttl:`, which in turn needs a server at JetStream API level 1.
 Under a JetStream domain or API prefix, the bucket's subjects are prefixed as chapter 4 specifies,
 and a bucket that is a mirror reads through its own stream and writes through the origin's
 subjects.
@@ -1323,34 +1451,45 @@ A bucket is the stream `OBJ_<bucket>` holding chunk messages and one metadata me
 
 ```ruby
 store = js.create_object_store(bucket: "assets", ttl: nil, max_bytes: nil, storage: :file,
-                               replicas: 1, compression: false, description: nil)
-store = js.object_store("assets")
+                               replicas: 1, compression: false, description: nil,
+                               placement: nil, metadata: nil)
+store = js.object_store("assets")                                # raises ObjectStore::BucketNotFoundError
 js.object_store_names ; js.object_stores ; js.delete_object_store("assets")
+store.name ; store.stream
 
 info = store.put("logo.png", File.open("logo.png", "rb"), description: nil, headers: nil,
                  metadata: nil, chunk_size: 128 * 1024)          # any IO or String
 info.name ; info.size ; info.chunks ; info.digest ; info.modified_at ; info.deleted? ; info.link?
 
 store.get("logo.png") { |chunk| out.write(chunk) }               # streams; verifies the digest at the end
-data = store.get("logo.png").read                                # an IO-like reader: read, each, close
+store.get("logo.png", into: io)                                  # or writes into an IO; both return the Info
+data = store.get("logo.png").read                                # an IO-like Reader: read, each, eof?, close
 store.get_file("logo.png", "/tmp/logo.png")
 store.put_file("logo.png", "/tmp/logo.png")
 
-store.info("logo.png")                # => ObjectInfo or nil, like kv.get
+store.info("logo.png")                # => ObjectStore::Info or nil, like kv.get; show_deleted: true
 store.exist?("logo.png")
 store.delete("logo.png")
 store.update_meta("logo.png", name: "brand.png", description: "v2")
 store.add_link("latest", info) ; store.add_bucket_link("other", other_store)
-store.list                            # lazy Enumerator of ObjectInfo; deleted: true includes tombstones
-store.watch(include_history: false, ignore_deletes: false, updates_only: false) { |info| ... }
-store.seal ; store.status
+store.list                            # lazy Enumerator of Info; deleted: true includes tombstones
+watcher = store.watch(include_history: false, ignore_deletes: false, updates_only: false,
+                      on_ready: nil, on_error: nil) { |info| ... }
+store.seal ; store.status             # Status: bucket, size, sealed?, storage, replicas, ttl, max_bytes, ...
 ```
 
-`put` reads the source in `chunk_size` pieces, publishes each chunk with an async publish window,
-computes SHA-256 as it goes, then writes the metadata as a per-subject rollup and purges the
-previous version's chunks. If anything fails, the chunks already written are purged. `get` reads
-chunks through an ordered consumer and raises `DigestMismatchError` if the data does not hash to
-the recorded digest; `get` of a missing object raises `ObjectNotFoundError`.
+`put` reads the source in `chunk_size` pieces, publishes each chunk with an async publish window
+(8 MiB of chunks, at most 256), computes SHA-256 as it goes, then writes the metadata as a
+per-subject rollup and purges the previous version's chunks, which stay readable until then. If
+anything fails, the chunks already written are purged. `get` reads chunks through an ordered
+consumer and raises `DigestMismatchError` if the data does not match the recorded size or digest;
+`get` of a missing or deleted object raises `ObjectNotFoundError`, and `get` follows a link to
+another object once, raising `LinkError` for a link to a bucket or to another link. A reader that
+is not read to the end must be closed, which removes its server consumer. `update_meta` to a name
+a live object already has, and a link under such a name, raise `ObjectExistsError`; any write to a
+sealed bucket raises `BucketSealedError`. The watcher is the Key/Value watcher's sibling:
+`on_ready`, `ready?`, `wait_until_ready`, `next`, `each`, `stop`. The `timeout:` of `put`, `get`
+and `list` follows the streaming rule of 7.3.
 
 Object subjects are `$O.<bucket>.C.<id>` and `$O.<bucket>.M.<name>`, published as plain subjects.
 Unlike Key/Value they are not rewritten under an API prefix, which is how `nats.go` behaves and
@@ -1365,24 +1504,30 @@ each on three subjects under `$SRV` (all services, by name, by name and id), so 
 subscriptions per service.
 
 ```ruby
-service = nc.services.add(name: "calc", version: "1.2.0", description: "arithmetic",
-                          metadata: {}, queue: "q")
+services = nc.services                            # a Service::Registry; nc.services(prefix: "$SRV")
+service = services.add(name: "calc", version: "1.2.0", description: "arithmetic",
+                       metadata: {}, queue: "q",
+                       stats_handler: ->(endpoint) { { "cache" => "warm" } },   # becomes `data` in STATS
+                       on_stop: ->(error) { log.info("stopped: #{error.inspect}") })
 
 service.endpoint("add") { |request| request.respond((request.data.to_i + 1).to_s) }
 service.endpoint("div", subject: "calc.div", queue: false, metadata: {}) do |request|
-  request.respond_error(400, "division by zero") if request.data == "0"
-  ...
+  next request.respond_error(400, "division by zero") if request.data == "0"
+  request.respond_json({ result: 100 / request.data.to_i })
 end
 
 math = service.group("math", queue: "math-q")
 math.endpoint("sqrt") { |request| ... }          # subject "math.sqrt"
 
+service.name ; service.id ; service.version ; service.endpoints
 service.info ; service.stats ; service.reset_stats
-service.on_stop { }                               # also accepted as on_stop: when adding
-service.stop                                      # drains endpoints, then answers no more discovery
+service.on_stop { |error| }                       # error is what stop was given, or nil
+service.stop(error = nil, timeout: nil)           # drains endpoints, then answers no more discovery
 service.stopped?
 
-nc.services.ping("calc") ; nc.services.info("calc") ; nc.services.stats("calc")   # discovery client
+services.ping("calc")                             # => [Service::Ping], one per instance that answered
+services.info("calc") ; services.stats("calc")    # => [Service::Info], [Service::Stats]
+services.stats("calc", id: service.id)            # one instance; also max:, stall:, timeout:
 ```
 
 Each endpoint is an ordinary queue subscription whose worker times the handler and updates the
@@ -1391,8 +1536,16 @@ default is `"q"`), or `false` for no queue group, so every instance receives eve
 exception in a handler is answered with a 500 error response carrying `Nats-Service-Error` and
 `Nats-Service-Error-Code`, counted, and recorded as the endpoint's last error; if the handler had
 already responded, the error is only counted. A `Service::Request` is a `Msg` with `respond`,
-`respond_json` and `respond_error`. `nc.services(prefix: "$SRV")` allows another discovery prefix,
-for use across account imports.
+`respond_json`, `respond_error(code, description, data = nil, headers: nil)` and `responded?`.
+
+`nc.services` returns a `Service::Registry`: `add` starts a service on the connection, and `ping`,
+`info` and `stats` are the discovery client, each a `request_many` on the control subject for
+every service, one service by name, or one instance by name and `id:`. They return value objects
+(`Ping`, `Info`, `Stats`, with `EndpointInfo` and `EndpointStats` inside) that keep the raw
+document; processing times are in seconds. `nc.services(prefix:)` selects another discovery
+prefix, for use across account imports. `stop` waits for requests in flight up to `timeout:`
+(the client's `drain_timeout` by default), raises `TimeoutError` if some remain, and is stopped
+either way.
 
 ---
 
@@ -1405,44 +1558,60 @@ raises and nothing else.
 Tether::Error
 ├── TimeoutError
 ├── ProtocolError
-├── InvalidSubjectError · InvalidHeaderError · MaxPayloadError · HeadersNotSupportedError
+├── ConfigurationError                 (an option tether cannot act on, such as force_reconnect without reconnect)
+├── InvalidSubjectError · MaxPayloadError · HeadersNotSupportedError
 ├── NoRespondersError
-├── SlowConsumerError · HandlerError
+├── SlowConsumerError · HandlerError   (events; HandlerError carries #msg and #cause)
+├── SubscriptionClosedError · ForkedError
 ├── ConnectionError
 │   ├── ConnectionClosedError · DisconnectedError · ConnectionDrainingError
-│   ├── NoServersError · ReconnectBufferFullError · ForkedError
+│   ├── NoServersError · ReconnectBufferFullError
 │   ├── TLSError
-│   └── AuthenticationError            (no usable credentials, signing failed)
+│   └── CredentialsError               (a credential cannot be read or decoded)
 ├── ServerError                        (-ERR lines; #fatal? says whether the server closes)
 │   ├── AuthorizationError · AuthenticationExpiredError · AuthenticationRevokedError
-│   ├── PermissionsViolationError · StaleConnectionError · MaxConnectionsError
+│   ├── AuthenticationTimeoutError · PermissionsViolationError · StaleConnectionError
+│   ├── MaxConnectionsError · MaxAccountConnectionsError · MaxSubscriptionsError
 │   └── ...                            (the table in errors.rb, derived from the server source)
 ├── JetStream::Error
 │   ├── APIError                       (#code, #err_code, #description)
-│   │   ├── StreamNotFoundError · StreamNameInUseError · ConsumerNotFoundError
-│   │   ├── ConsumerExistsError · WrongLastSequenceError · MessageNotFoundError
-│   │   ├── JetStreamNotEnabledError · InsufficientResourcesError · RequiredApiLevelError · ...
-│   ├── NoStreamResponseError · TooManyStalledMessagesError · IncompleteBatchError
-│   ├── TooManyResultsError
+│   │   ├── StreamNotFoundError · StreamNameInUseError · StreamMismatchError · StreamSealedError
+│   │   ├── ConsumerNotFoundError · ConsumerExistsError · MessageNotFoundError
+│   │   ├── WrongLastSequenceError · DuplicateInProgressError · LimitReachedError
+│   │   ├── JetStreamNotEnabledError · InsufficientResourcesError · RequiredApiLevelError
+│   │   ├── BadRequestError · IncompleteBatchError · BatchTooLargeError · BatchPublishDisabledError
+│   │   └── SchedulesDisabledError · InvalidScheduleError
+│   ├── ServiceUnavailableError · NoStreamResponseError
+│   ├── TooManyStalledMessagesError · MessageGapError · TooManyResultsError
 │   ├── ConsumerDeletedError · NoHeartbeatError · PinIdMismatchError · PushConsumerError
+│   ├── PullError                      (#status; a pull the server refused or ended)
 │   └── AlreadyAckedError · NotJetStreamMessageError
 ├── KeyValue::Error
-│   ├── BucketNotFoundError · KeyNotFoundError · InvalidKeyError · InvalidBucketNameError
+│   ├── BucketNotFoundError · BucketExistsError · BadBucketError
+│   ├── KeyNotFoundError · InvalidKeyError · InvalidBucketNameError
 │   └── RevisionMismatchError ── KeyExistsError
 ├── ObjectStore::Error
-│   └── ObjectNotFoundError · DigestMismatchError · BucketSealedError · InvalidObjectNameError
+│   ├── BucketNotFoundError · BucketExistsError · BucketSealedError · InvalidBucketNameError
+│   ├── ObjectNotFoundError · ObjectExistsError · InvalidObjectNameError
+│   └── DigestMismatchError · LinkError
 └── Service::Error
 ```
 
-`APIError.for(response)` picks the subclass from the `err_code`, falling back to `APIError` itself
+An unknown option or keyword is a plain `ArgumentError`, not a `Tether::Error`: it is a bug in the
+calling code, not a condition to rescue.
+
+`APIError.for(error)` picks the subclass from the `err_code`, falling back to `APIError` itself
 for codes without a dedicated class, so a new server error is still raised with its code and text.
 `KeyValue::KeyExistsError` and the like are raised by translating the specific `APIError` at the
-call that knows what it means; the original is available as `cause`. The existing
-`ConnectionReconnectingError` is renamed `DisconnectedError`.
+call that knows what it means; the original is available as `cause`.
 
-Which exceptions are worth retrying is a method, not folklore: `error.retryable?` is true for
-timeouts, disconnects, no-responders on JetStream API calls, and the server's transient cluster
-codes.
+Which exceptions are worth retrying is a method, not folklore. `error.retryable?` is true where
+repeating the same call may succeed with no change by the caller: `DisconnectedError`,
+`JetStream::NoStreamResponseError`, `JetStream::ServiceUnavailableError`, and an `APIError` whose
+code is one of the server's transient ones (JetStream temporarily unavailable or leaderless, a
+duplicate still in progress, too many batches in flight). It is false for everything else,
+`TimeoutError` included: a timeout says nothing about whether the call took effect, so repeating it
+is the caller's decision.
 
 ---
 
@@ -1454,15 +1623,21 @@ codes.
 |---|---|---|---|
 | reader | 1 per live socket | until the socket closes | read, parse, dispatch; never user code, never blocks on anything but the socket read |
 | flusher | 1 per client | first connect until close | writes the buffer when kicked |
-| timer | 1 per client | connect until close | fires pings, heartbeat monitors, ack timeouts, backoff; only appends and posts |
+| timer | 0 or 1 per client | first timer entry (normally the keepalive, at connect) until close | fires pings, heartbeat monitors, ack timeouts, backoff; only appends and posts |
 | events | 0 or 1 per client | first handler registered until `:close` is delivered | runs connection event handlers in order |
 | reconnect | 0 or 1 | one outage | the reconnect loop |
+| close | 0 or 1 | transient | closes the client when the socket is lost and reconnect is not allowed |
 | subscription worker | `concurrency` per subscription with a block | until the subscription closes | runs the user's block |
 | consume worker | `concurrency` per `consume` | until stopped | runs the block, issues pulls, serves the control queue; a `messages` iterator has no worker, the thread calling `next` does this work |
+| publish errors | 0 or 1 per JetStream context | from `on_publish_error` on | runs the handler for failed asynchronous publishes |
 
-All threads are named `tether:<role>` and none sets `abort_on_exception`. A connected client with
-no handlers and no block subscriptions runs three threads. Threads end because the thing they block on is closed (a
-socket, a queue), never because another thread killed them.
+Key/Value and Object Store watchers with a block are consume loops and run on a consume worker;
+endpoints of a service are subscriptions. Threads are named `tether:reader`, `tether:flusher`,
+`tether:timer`, `tether:events`, `tether:reconnect`, `tether:close`, `tether:sub:<subject>`,
+`tether:consume:<consumer>` and `tether:publish-errors`, and none sets `abort_on_exception`. The
+name is how `Client#drain` knows it was called from a tether thread. A connected client with no
+handlers and no block subscriptions runs three threads. Threads end because the thing they block on
+is closed (a socket, a queue), never because another thread killed them.
 
 ### 12.2 Locks
 
@@ -1476,14 +1651,14 @@ socket, a queue), never because another thread killed them.
 | per object | a subscription's counters, a pull engine's pending counts, a future's value | field updates |
 
 Ordering, to exclude deadlock: `lifecycle → writer I/O → writer buffer → registry`. The reconnect
-replay is the one place that takes the registry lock under the buffer lock, to snapshot it.
-`inbox` and per-object locks are leaves that are never held while taking another lock. The reader
-and timer threads take only the buffer lock, the registry lock, leaf locks and, to report a lost
-socket, the lifecycle lock. None of these is ever held across I/O, so neither thread can be stalled
-by a slow socket. Reporting a lost socket only records the transition and starts the reconnect
-thread; closing the old socket, joining threads and connecting again all happen there. The fork
-reset (5.12) has its own lock for the same reason: the fresh connect it ends with is I/O. User code is never called with a
-lock held.
+replay is the one place that takes the registry lock under the buffer lock, to snapshot it. `inbox`
+and per-object locks are leaves that are never held while taking another lock. The reader and timer
+threads take only the buffer lock, the registry lock, leaf locks and, to report a lost socket, the
+lifecycle lock. None of these is ever held across I/O, so neither thread can be stalled by a slow
+socket. Reporting a lost socket only records the transition and starts the reconnect thread; closing
+the old socket, joining threads and connecting again all happen there. The fork reset (5.12) has its
+own lock for the same reason: the fresh connect it ends with is I/O. User code is never called with
+a lock held.
 
 ### 12.3 Guarantees
 
@@ -1512,101 +1687,88 @@ lock held.
 | Per-subscription and connection drain | n/a | yes | connection only | yes |
 | WebSocket transport, with compression | yes | yes | yes, via `websocket` gem, no compression | yes, no gem |
 | Fork safety | n/a | n/a | yes, with hazards | yes |
-| Fiber scheduler compatible | n/a | n/a | not designed for | yes |
+| Fiber scheduler compatible | n/a | n/a | not designed for | by construction: only scheduler-aware primitives block; the suite does not run under one yet |
 | Streams: create, update, info, list, purge, delete, message get and delete | yes | yes | no purge, message delete or lists | yes |
 | Direct get; batch and multi-last direct get | yes | single | single | yes |
 | Stream snapshot and restore | yes | no | no | yes |
 | `Nats-Required-Api-Level` on requests | yes | no | no | yes |
 | Publish with dedupe and expectations; async publish | yes | yes | sync only | yes |
 | Per-message TTL; schedules | yes | yes | yes | yes |
-| Atomic batch publish; fast-ingest batches; counters | yes | no | acks parsed only | yes |
-| Pull: fetch, continuous consume, iterator | yes | yes | fetch only | yes |
+| Atomic batch publish; fast-ingest batches; counters | yes | no | acks parsed only | yes (`batch`, `fast_batch`, `counter`) |
+| Pull: fetch, continuous consume, iterator | yes | yes | fetch only | yes (`fetch`, `consume`, `messages`) |
 | Push consumers | yes | yes, legacy | KV watch only | no, by design: inspect and delete only |
 | Ordered consumers | yes | yes | no | yes |
 | Multiple filter subjects; pause; reset; priority groups and pinning | yes | yes | yes | yes |
 | Key/Value, with watch, per-key TTL, limit markers, key filters, mirrors, purge-deletes | conventions | yes | watch only; none of the rest | yes |
-| Object Store | conventions | yes | no | yes |
-| Services | conventions | yes | yes | yes |
+| Object Store, with links, watch and seal | conventions | yes | no | yes |
+| Services, with discovery client | conventions | yes | service side only | yes |
+| Advisories as decoded value objects | yes | no | no | yes |
 
 ---
 
 ## 14. Testing
 
-The existing rules stay: `bundle exec rake` runs RSpec, RuboCop and `rbs validate`, and specs run
-against a real server in Docker, one container per example group on a free port.
+`bundle exec rake` runs RSpec, RuboCop and `rbs validate`. Feature specs run against a real server
+in Docker (`nats:alpine`, or `NATS_IMAGE`): one shared container on a free port, plus a container
+of its own for every spec that needs a particular server configuration. Setting `NATS_URL` points
+the suite at a server that is already running. Unit specs, which need no server, live in
+`spec/unit/`.
 
 - **Protocol layer** is tested without sockets. The parser keeps its byte-split invariance spec
   (identical events at every split point and one byte at a time).
-- **Each `Client rule`** in the protocol chapters maps to at least one spec, named after the rule.
 - **Behavior over implementation.** Specs go through the public API and never read instance
   variables.
 - **Concurrency suite**, the part that distinguishes tether: N threads publishing checksummed
   payloads with no interleaving; concurrent requests; concurrent flush; a stuck subscriber that
   delays nothing else; concurrent `fetch` on one consumer; reconnect under publish load with no
   lost subscriptions; requests failed promptly on disconnect; a request racing a fast reply.
-- **Fault injection.** A small TCP proxy in `spec/support` sits between the client and the server
-  to drop the connection, stall writes, delay bytes and truncate frames, which is how reconnect,
-  stale-connection detection and write deadlines are exercised deterministically.
-- **Cluster specs** start three servers on a Docker network for discovery, failover, lame duck and
-  leader changes.
-- **The suite runs twice**, once normally and once under a `Fiber::Scheduler`. A minimal scheduler
-  lives in `spec/support`, so this adds no development dependency.
+- **Fault injection.** A small TCP proxy in `spec/support` sits between the client and the server to
+  drop connections and to simulate an outage on a fixed port, and scripted fake servers
+  (`fake_nats_server.rb`, `fake_websocket_server.rb`) say exactly what a spec needs a server to say:
+  an `-ERR`, a lame duck `INFO`, advertised cluster URLs, silence. That is how reconnect,
+  stale-connection detection and discovery are exercised deterministically.
+- **Not there yet:** specs against a real three-server cluster (failover and leader changes are
+  covered only through the fake server and the status table), and a second run of the suite under
+  a `Fiber::Scheduler`.
 - **Regression specs** for every `nats-pure` defect in section 2.1: mixed encodings in one flush,
   CRLF in subjects and headers, a permissions violation that must not drop the connection, a
   handler that raises, a KV watcher on an empty bucket, an abandoned `keys` enumerator.
-- **A static spec** fails the build if `Timeout.timeout`, `Thread#raise` or `Thread#kill` appears
-  in `lib`.
+- **A static spec** (`spec/unit/tether_spec.rb`) fails the build if `Timeout.timeout`,
+  `Thread#raise` or `Thread#kill` appears in `lib`.
 
 Features that need a newer server than the test image provides are tagged with their API level and
 skipped with a message when the server reports a lower one.
 
 ---
 
-## 15. Build order
+## 15. How it was built
 
-Each step ends with the suite green and one or more atomic commits. Later steps only add files and
-do not reshape earlier ones.
+The gem was built bottom up, each step ending with the suite green and one or more atomic commits.
+Later steps added files and did not reshape earlier ones. RBS signatures and YARD were written
+with each file, not at the end.
 
-1. **Connection foundation.** `Options`, `ServerInfo`, `Subject`, `Events`, `Timer`, `Writer`
-   extracted from `Transport` with its two locks, `Handshake`, `Lifecycle` with the state machine.
-   `Client` shrinks to delegation. This step also makes the changes to existing code listed below,
-   and updates the specs that name the old methods.
-2. **Resilience.** `ServerPool`, reconnect with resubscribe and the reconnect buffer, keepalive,
-   lame duck, `force_reconnect`, fork detection. The fault-injection proxy.
-3. **Core completeness.** Auto-unsubscribe, `concurrency:`, byte limits, subscription and
-   connection drain, `request_many`, resolvers, stats, `rtt`, no echo, subject validation.
-4. **Security.** TLS in all orders, client certificates, NKEY and JWT via OpenSSL, credentials
-   files, auth error handling in reconnect.
-5. **JetStream foundation.** `Schema`, the config and info classes, the API transport with error
-   mapping and paging, stream management, account info.
-6. **Publishing.** Sync with retries, async with the bounded window, TTL, rollups, schedules,
-   atomic and fast batches, counters.
-7. **Consuming.** Consumer management, messages and acks, `fetch`, the pull engine with `consume`
-   and `messages`, priority groups, the ordered consumer.
-8. **Key/Value**, then **Object Store**, both on the ordered consumer.
-9. **Services.**
-10. **WebSocket transport.**
-11. **Documentation.** README, a migration guide from `nats-pure`, YARD and RBS complete.
+1. **Protocol layer and a first connection.** Parser, encoder, headers, the request mux and a
+   single-socket client, written before this design existed.
+2. **Connection foundation and resilience.** `Options`, `ServerInfo`, `Subject`, `Events`, `Timer`,
+   the `Writer` with its two locks, `Handshake`, and `Lifecycle` with the state machine; `Client`
+   shrank to delegation. `ServerPool`, reconnect with resubscribe and the reconnect buffer,
+   keepalive, lame duck, `force_reconnect`, fork detection, and the fault-injection proxy.
+3. **Core completeness and security.** Auto-unsubscribe, `concurrency:`, byte limits, subscription
+   and connection drain, `request_many`, resolvers, stats, `rtt`, no echo, subject validation; TLS
+   in all orders, client certificates, NKEY and JWT via OpenSSL, credentials files.
+4. **WebSocket transport**, with compression.
+5. **Services.**
+6. **JetStream.** `Schema`, the config and info classes, the API transport with error mapping and
+   paging, stream management; then publishing (sync with retries, async with the bounded window,
+   TTL, rollups, schedules, atomic and fast batches, counters); then consuming (consumer
+   management, messages and acks, `fetch`, the pull engine with `consume` and `messages`, priority
+   groups, the ordered consumer).
+7. **Key/Value**, then **Object Store**, both on the ordered consumer.
+8. **Documentation.** The README, the [migration guide](migrating-from-nats-pure.md), and this
+   document brought back in line with the code.
 
-RBS signatures and YARD are written with each file, not at the end.
-
-**Changes to code that exists today.** The current 2,300 lines were written before this design and
-differ from it in these ways, all settled in step 1:
-
-| Today | Becomes |
-|---|---|
-| `Transport` holds the write buffer under one lock and writes while holding it | `Writer` with separate buffer and I/O locks; `Transport` only moves bytes |
-| `Transport#read` sets `IO#timeout=` per call | set once for the handshake, then left infinite for the reader; writes use `wait_writable` |
-| `Dispatcher#on_ping` writes the `PONG` from the reader thread | appends and kicks |
-| `Dispatcher` keeps the PONG FIFO under its own lock and writes the `PING` inside it | the FIFO moves under the writer's buffer lock |
-| `ErrorHolder`, handlers called on the reporting thread | `Events`, handlers on the event thread |
-| `publish` returns `nil` and checks the whole frame against `max_payload` | returns `self`; checks headers plus payload, which is what the server measures |
-| `client.unsubscribe(subscription)` | `subscription.unsubscribe` |
-| `subscription.next_message(deadline)` | `subscription.next(timeout:)` |
-| `client.build_inbox_subject` | `client.new_inbox` |
-| `client.server_info` returning a `Hash` | returning a `ServerInfo` |
-| `client.subscription_count` | removed; the registry is internal |
-| `ConnectionReconnectingError` | `DisconnectedError` |
+Still open: a run of the suite under a `Fiber::Scheduler`, and specs against a real cluster
+(section 14).
 
 ---
 
@@ -1663,7 +1825,9 @@ seconds in every method.
 value there, but a watcher's "initial values done" is a state and an event, and a fetch that finds
 nothing returns an empty batch.
 
-**Renames from `nats-pure`**, for the migration guide:
+**Renames from `nats-pure`.** The most common ones are below; the
+[migration guide](migrating-from-nats-pure.md) has the full list, with options, errors and
+behavior differences.
 
 | nats-pure | tether |
 |---|---|
@@ -1674,8 +1838,8 @@ nothing returns an empty batch.
 | `nc.flush(5)` | `nc.flush(timeout: 5)` |
 | `msg.reply`, `msg.header` | `msg.reply_to`, `msg.headers` |
 | `js.add_stream(name: ...)` | `js.create_stream(name: ...)` |
-| `js.pull_subscribe(subject, durable)` then `psub.fetch(n)` | `js.stream(name).consumer(durable).fetch(n)` |
-| `js.subscribe(subject) { }` | `stream.consumer(...).consume { }` |
+| `js.pull_subscribe(subject, durable)` then `psub.fetch(n)` | `js.consumer(stream, durable).fetch(n)` |
+| `js.subscribe(subject) { }` | `js.consumer(stream, durable).consume { }` |
 | `msg.ack_sync`, `msg.nak(delay: ns)` | `msg.ack_sync`, `msg.nak(delay: seconds)` |
 | `kv.watch` yielding `nil` after initial values | `watcher.on_ready { }` |
 | `NATS::IO::Timeout`, `NATS::IO::NoRespondersError` | `Tether::TimeoutError`, `Tether::NoRespondersError` |
