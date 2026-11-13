@@ -100,6 +100,7 @@ module Tether
           if @status == :connected && @options.reconnect?
             change_status(:reconnecting)
             @writer.detach(DisconnectedError.new("connection lost"))
+            @events.notify(:disconnect, error)
             spawn("reconnect") { recover(transport, reader, error) }
           else
             spawn("close") do
@@ -347,7 +348,6 @@ module Tether
       def recover(transport, reader, error)
         transport.close
         reader&.join(2) unless reader == Thread.current
-        @events.notify(:disconnect, error)
         @events.emit(:disconnect, error)
         reconnect_loop
       end
