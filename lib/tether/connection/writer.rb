@@ -83,7 +83,9 @@ module Tether
         nil
       end
 
-      # Appends one complete binary frame.
+      # Appends one complete binary frame. Only the frame that lands in an empty
+      # buffer wakes the flusher; frames after it ride along with that wake-up,
+      # since the flusher swaps out the whole buffer.
       #
       # @param frame [String] a whole frame
       # @param flush [Boolean] write before returning when the socket is free
@@ -105,7 +107,7 @@ module Tether
 
         if size >= HARD_CAP then drain(wait: true)
         elsif flush || size >= BUFFER_LIMIT then drain(wait: false) || kick
-        else kick
+        elsif size == frame.bytesize then kick
         end
         nil
       end
