@@ -12,6 +12,7 @@ module Tether
       attr_reader server: Server?
       attr_reader writer: Writer
       attr_reader registry: Protocol::Registry
+      attr_reader worker_pool: WorkerPool
       attr_reader events: Events
       attr_reader timer: Timer
       attr_reader pool: ServerPool

@@ -1,0 +1,31 @@
+module Tether
+  module Connection
+    class WorkerPool
+      interface _Job
+        def run: () -> bool
+      end
+
+      IDLE_TIMEOUT: Integer
+
+      @max_threads: Integer
+      @name: String
+      @idle_timeout: Numeric
+      @jobs: Thread::Queue
+      @lock: Thread::Mutex
+      @threads: Integer
+      @idle: Integer
+
+      def initialize: (max_threads: Integer, ?name: String, ?idle_timeout: Numeric) -> void
+      def schedule: (_Job job) -> bool
+      def threads: () -> Integer
+      def close: () -> void
+
+      private
+
+      def start_worker: () -> Integer?
+      def work: () -> void
+      def take: () -> _Job?
+      def requeue: (_Job job) -> void
+    end
+  end
+end

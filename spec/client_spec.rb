@@ -505,7 +505,47 @@ RSpec.describe Tether::Client do
       nc.subscribe(topic) { names.push(Thread.current.name) }
       nc.publish(topic, "x")
 
+      expect(names.pop(timeout: 2)).to eq("tether:worker")
+    end
+
+    it "runs the blocks of every subscription on at most worker_threads threads" do
+      client = connect(worker_threads: 3)
+      threads = Thread::Queue.new
+      20.times { |index| client.subscribe("#{topic}.#{index}") { threads.push(Thread.current) } }
+      client.flush
+      20.times { |index| client.publish("#{topic}.#{index}", "x") }
+
+      expect(take(threads, 20).uniq.size).to be <= 3
+    end
+
+    it "keeps delivering to other subscriptions while a block is busy" do
+      client = connect(worker_threads: 2)
+      received = Thread::Queue.new
+      client.subscribe("#{topic}.busy") { gate.pop }
+      client.subscribe("#{topic}.free") { |msg| received.push(msg.data) }
+      client.flush
+      client.publish("#{topic}.busy", "x").publish("#{topic}.free", "through")
+
+      expect(received.pop(timeout: 2)).to eq("through")
+    end
+
+    it "runs a dedicated subscription on a thread named after its subject" do
+      names = Thread::Queue.new
+      nc.subscribe(topic, dedicated: true) { names.push(Thread.current.name) }
+      nc.publish(topic, "x")
+
       expect(names.pop(timeout: 2)).to eq("tether:sub:#{topic}")
+    end
+
+    it "delivers to a dedicated subscription while every shared worker is busy" do
+      client = connect(worker_threads: 1)
+      received = Thread::Queue.new
+      client.subscribe("#{topic}.busy") { gate.pop }
+      client.subscribe("#{topic}.own", dedicated: true) { |msg| received.push(msg.data) }
+      client.flush
+      client.publish("#{topic}.busy", "x").publish("#{topic}.own", "through")
+
+      expect(received.pop(timeout: 2)).to eq("through")
     end
 
     it "returns a subscription for the subject" do

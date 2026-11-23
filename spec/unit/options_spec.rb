@@ -41,6 +41,11 @@ RSpec.describe Tether::Options do
         .to raise_error(ArgumentError, /max_pending: must be a positive number/)
     end
 
+    it "raises for a worker_threads that is not positive" do
+      expect { described_class.new(worker_threads: 0) }
+        .to raise_error(ArgumentError, /worker_threads: must be a positive number/)
+    end
+
     it "raises for two authentication mechanisms at once" do
       expect { described_class.new(token: "t", user: "u") }
         .to raise_error(ArgumentError, "conflicting authentication options: :token, :user")

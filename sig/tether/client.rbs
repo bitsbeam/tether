@@ -28,7 +28,7 @@ module Tether
     def initialize: (?urls? urls, **untyped options) -> void
     def connect: () -> self
     def publish: (String subject, ?String? payload, ?reply_to: String?, ?headers: headers?, ?flush: bool) -> self
-    def subscribe: (String subject, ?queue: String?, ?max: Integer?, ?max_pending: Integer?, ?max_pending_bytes: Integer?, ?concurrency: Integer) ?{ (Protocol::Msg msg) -> void } -> Connection::Subscription
+    def subscribe: (String subject, ?queue: String?, ?max: Integer?, ?max_pending: Integer?, ?max_pending_bytes: Integer?, ?concurrency: Integer, ?dedicated: bool) ?{ (Protocol::Msg msg) -> void } -> Connection::Subscription
     def request: (String subject, ?String? payload, ?headers: headers?, ?timeout: timeout) -> Protocol::Msg
     def request_many: (String subject, ?String? payload, ?headers: headers?, ?max: Integer?, ?stall: Numeric?, ?sentinel: _Sentinel?, ?timeout: timeout) -> Array[Protocol::Msg]
                     | (String subject, ?String? payload, ?headers: headers?, ?max: Integer?, ?stall: Numeric?, ?sentinel: _Sentinel?, ?timeout: timeout) { (Protocol::Msg msg) -> void } -> Integer
@@ -68,6 +68,7 @@ module Tether
     def timer: () -> Connection::Timer
     def generation: () -> Integer
     def unsubscribed: (Connection::entry entry, ?Integer? max) -> void
+    def worker_pool: () -> Connection::WorkerPool
     def forget: (Connection::entry entry) -> void
     def report_slow_consumer: (Connection::Subscription subscription) -> void
     def report_handler_error: (Exception error, ?untyped msg) -> void

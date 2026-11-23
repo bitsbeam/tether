@@ -12,7 +12,7 @@ module Tether
       name: nil, connect_timeout: 2, write_timeout: 10, reconnect: true, retry_on_failed_connect: false,
       randomize: true, ignore_discovered_servers: false, ping_interval: 120, max_pings_out: 2, echo: true,
       inbox_prefix: "_INBOX", max_pending: 65_536, max_pending_bytes: 64 * MEBIBYTE, drain_timeout: 30,
-      validate_subjects: true, token: nil, user: nil, password: nil, jwt: nil, nkey_seed: nil,
+      worker_threads: 16, validate_subjects: true, token: nil, user: nil, password: nil, jwt: nil, nkey_seed: nil,
       nkey_seed_file: nil, credentials: nil, credentials_file: nil, auth: nil, tls: nil, websocket: nil,
       logger: nil
     }.freeze
@@ -87,7 +87,7 @@ module Tether
     end
 
     def validate
-      positive(:connect_timeout, :write_timeout, :max_pings_out, :max_pending, :max_pending_bytes)
+      positive(:connect_timeout, :write_timeout, :max_pings_out, :max_pending, :max_pending_bytes, :worker_threads)
       validate_auth
       prefix = inbox_prefix.to_s
       return unless prefix.empty? || prefix.match?(/[\s*>]/) || prefix.end_with?(".")

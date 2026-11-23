@@ -26,6 +26,9 @@ module Tether
       # @return [Protocol::Registry] the live subscriptions
       attr_reader :registry
 
+      # @return [WorkerPool] the threads that run subscription blocks
+      attr_reader :worker_pool
+
       # @return [Events] event handlers and listeners
       attr_reader :events
 
@@ -165,6 +168,7 @@ module Tether
         reader.join(2) if reader && reader != Thread.current
         @timer.stop
         @registry.close(error)
+        @worker_pool.close
         announce_close(previous, error)
         nil
       end
@@ -218,6 +222,7 @@ module Tether
         @wakeup = Thread::Queue.new
         @counters = Counters.new
         @registry = Protocol::Registry.new
+        @worker_pool = WorkerPool.new(max_threads: @options.worker_threads)
         @timer = Timer.new(on_error: ->(error) { @events.error(error) })
         settings = @options.reconnect || Options::RECONNECT_DEFAULTS
         @writer = Writer.new(write_timeout: @options.write_timeout, reconnect_buffer: settings[:buffer_size],

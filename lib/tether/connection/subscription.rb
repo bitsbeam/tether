@@ -2,12 +2,15 @@
 
 module Tether
   module Connection
-    # One subscription, with its own bounded queue and, when given a block,
-    # its own worker threads.
+    # One subscription, with its own bounded queue. A block runs on the
+    # client's {WorkerPool}, or with `dedicated: true` on a pool of its own.
     #
-    # The reader thread only ever enqueues here. A slow block delays nothing
-    # but its own subscription.
+    # The reader thread only ever enqueues here and schedules the
+    # subscription on its pool when it is not already scheduled.
     class Subscription
+      # Messages a worker handles before letting other subscriptions have a turn.
+      BATCH = 64
+
       # @return [String] the token sent to the server and echoed back on every message
       attr_reader :sid
 
@@ -27,10 +30,11 @@ module Tether
       # @param max_pending [Integer] messages that may wait before newer ones are dropped
       # @param max_pending_bytes [Integer] bytes that may wait before newer messages are dropped
       # @param max [Integer, nil] end the subscription after this many messages
-      # @param concurrency [Integer] worker threads calling the block
+      # @param concurrency [Integer] workers that may call the block at once
+      # @param dedicated [Boolean] run the block on threads of its own instead of the client's pool
       # @yieldparam msg [Protocol::Msg] each message, on a worker thread
       def initialize(client:, sid:, subject:, max_pending:, max_pending_bytes:, queue: nil, max: nil,
-                     concurrency: 1, &block)
+                     concurrency: 1, dedicated: false, &block)
         @client = client
         @sid = sid
         @subject = subject
@@ -47,8 +51,10 @@ module Tether
         @state = :active
         @slow = false
         @error = nil
-        @workers = block ? Array.new(concurrency) { start_worker } : []
-        @running = @workers.size
+        @concurrency = concurrency
+        @dedicated = dedicated
+        @jobs = 0
+        @pool = (dedicated ? own_pool : client.worker_pool) if block
       end
 
       # Enqueues a message. Called on the reader thread, so it never blocks.
@@ -56,7 +62,13 @@ module Tether
       # @param msg [Protocol::Msg] the message
       # @return [Boolean] false when the message was dropped
       def deliver(msg)
-        outcome = @lock.synchronize { admit(msg) }
+        start = false
+        outcome = @lock.synchronize do
+          admitted = admit(msg)
+          start = claim_job if @jobs < @concurrency
+          admitted
+        end
+        job_done unless !start || @pool.schedule(self)
         @client.report_slow_consumer(self) if outcome == :slow
         finish_intake if outcome == :last
         outcome != :slow && outcome != :closed
@@ -147,7 +159,7 @@ module Tether
       # @raise [TimeoutError] if the queue is not emptied in time
       def finish_drain(deadline)
         finish_intake
-        return if @workers.include?(Thread.current) || @workers.empty?
+        return if @pool.nil? || Thread.current[:tether_subscription].equal?(self)
         return if @finished.pop(timeout: deadline.remaining) || @finished.closed?
 
         @lock.synchronize { @state = :closed }
@@ -170,8 +182,26 @@ module Tether
         @client.forget(self)
         @messages.clear
         @messages.close
-        finished if @workers.empty?
+        finished if idle?
         nil
+      end
+
+      # Handles a batch of messages on a worker of the pool.
+      #
+      # @api private
+      # @return [Boolean] whether messages are still waiting, so the pool queues this again
+      def run
+        Thread.current[:tether_subscription] = self
+        handled = 0
+        while handled < BATCH && !@messages.empty?
+          invoke(account(@messages.pop(true)))
+          handled += 1
+        end
+        more?
+      rescue ThreadError
+        more?
+      ensure
+        Thread.current[:tether_subscription] = nil
       end
 
       # Ends the subscription in a forked child without running any callback.
@@ -297,17 +327,37 @@ module Tether
         @client.forget(self)
         @lock.synchronize { @state = :closed unless @state == :draining }
         @messages.close
-        finished if @workers.empty?
+        finished if idle?
       end
 
-      def start_worker
-        Thread.new do
-          Thread.current.name = "tether:sub:#{@subject}"
-          while (msg = @messages.pop)
-            invoke(account(msg))
-          end
-          finished if @lock.synchronize { (@running -= 1).zero? }
+      def own_pool
+        WorkerPool.new(max_threads: @concurrency, name: "tether:sub:#{@subject}")
+      end
+
+      def claim_job
+        return false unless @pool && @jobs < @concurrency && @jobs < @pending
+
+        @jobs += 1
+        true
+      end
+
+      def more?
+        last = @lock.synchronize do
+          return true unless @messages.empty?
+
+          @jobs -= 1
+          @jobs.zero? && @messages.closed?
         end
+        finished if last
+        false
+      end
+
+      def job_done
+        finished if @lock.synchronize { (@jobs -= 1).zero? && @messages.closed? }
+      end
+
+      def idle?
+        @lock.synchronize { @jobs.zero? }
       end
 
       def invoke(msg)
@@ -324,6 +374,7 @@ module Tether
           @finished.close
           @close_handlers.dup
         end
+        @pool.close if @dedicated
         handlers.each do |handler|
           handler.call
         rescue StandardError => e

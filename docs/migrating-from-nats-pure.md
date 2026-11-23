@@ -77,6 +77,7 @@ An exception in a subscription block was passed to `on_error` as it was. Tether 
 | `nc.subscribe(s, queue: q) { \|data, reply, subject\| }` | `nc.subscribe(s, queue: q) { \|msg\| }` |
 | `pending_msgs_limit:`, `pending_bytes_limit:` | `max_pending:`, `max_pending_bytes:` |
 | `processing_concurrency: 4` | `concurrency: 4` |
+| a shared pool of 24 callback threads | a shared pool of `worker_threads:` (default 16); `dedicated: true` gives a subscription its own |
 | `sub.next_msg(timeout: 1)` | `sub.next(timeout: 1)` |
 | `sub.unsubscribe(5)` | `sub.unsubscribe(after: 5)` |
 | `nc.request(s, data, timeout: 1, header: h)` | `nc.request(s, data, timeout: 1, headers: h)` |

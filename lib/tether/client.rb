@@ -84,26 +84,31 @@ module Tether
     end
 
     # Subscribes to a subject. With a block, messages are delivered to it on
-    # a worker thread; without one, take them with {Connection::Subscription#next}.
+    # the client's worker threads, shared by every subscription and capped by
+    # the `worker_threads:` option; without one, take them with
+    # {Connection::Subscription#next}.
     #
     # @param subject [String] the subject or wildcard pattern
     # @param queue [String, nil] a queue group, so each message goes to one member
     # @param max [Integer, nil] end the subscription after this many messages
     # @param max_pending [Integer, nil] messages that may wait before newer ones are dropped
     # @param max_pending_bytes [Integer, nil] bytes that may wait before newer messages are dropped
-    # @param concurrency [Integer] worker threads for the block; more than one gives up ordering
+    # @param concurrency [Integer] workers that may run the block at once; more than one gives up ordering
+    # @param dedicated [Boolean] run the block on threads of its own, for a block that blocks for long
     # @yieldparam msg [Protocol::Msg] each message
     # @return [Connection::Subscription] the subscription
     # @raise [InvalidSubjectError] if the subject or queue is malformed
     # @raise [ConnectionDrainingError, ConnectionClosedError] if the connection is ending
-    def subscribe(subject, queue: nil, max: nil, max_pending: nil, max_pending_bytes: nil, concurrency: 1, &block)
+    def subscribe(subject, queue: nil, max: nil, max_pending: nil, max_pending_bytes: nil, concurrency: 1,
+                  dedicated: false, &block)
       ensure_accepting
       Protocol::Subject.pattern!(subject)
       Protocol::Subject.check!(queue, "queue group") if queue
       register(Connection::Subscription.new(
                  client: self, sid: @connection.registry.next_sid, subject: subject, queue: queue, max: max,
                  max_pending: max_pending || @options.max_pending,
-                 max_pending_bytes: max_pending_bytes || @options.max_pending_bytes, concurrency: concurrency, &block
+                 max_pending_bytes: max_pending_bytes || @options.max_pending_bytes, concurrency: concurrency,
+                 dedicated: dedicated, &block
                ))
     end
 
@@ -355,6 +360,10 @@ module Tether
     rescue ConnectionClosedError
       nil
     end
+
+    # @api private
+    # @return [Connection::WorkerPool] the threads that run subscription blocks
+    def worker_pool = @connection.worker_pool
 
     # @api private
     # @param entry [Connection::Subscription, Connection::Resolver] the entry to stop routing to

@@ -45,6 +45,7 @@ module Tether
     def inbox_prefix: () -> String
     def max_pending: () -> Integer
     def max_pending_bytes: () -> Integer
+    def worker_threads: () -> Integer
     def drain_timeout: () -> Numeric?
     def validate_subjects: () -> bool
     def token: () -> credential?

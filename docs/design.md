@@ -104,7 +104,7 @@ reading the code:
 | Back-pressure | The pending buffer is bounded at 32,768 *commands*, not bytes, and publishers block without a timeout during an outage | A byte-bounded reconnect buffer that raises on overflow |
 | Reconnect | A failure after the handshake (resubscribe, buffer replay) leaves the client in `RECONNECTING` forever | Reconnect is one supervised loop; every failure either retries or closes with a callback |
 | Callbacks | `on_error` runs on the read loop under the client monitor; if it raises, `abort_on_exception` kills the process | Events run on their own thread; an exception in user code is caught and reported |
-| Dispatch | One pool of 24 workers serves every subscription *and* request replies, so 24 slow handlers time out every request on the connection | Replies are resolved on the reader thread with no user code; each subscription has its own worker |
+| Dispatch | One pool of 24 workers serves every subscription *and* request replies, so 24 slow handlers time out every request on the connection | Replies are resolved on the reader thread with no user code, so subscription blocks share a pool without holding up a reply; a subscription can opt out with threads of its own |
 | Validation | Subjects, replies, queue names and headers are written into the protocol stream unchecked, which allows CRLF injection | Validated at the API boundary |
 | Fork | The child writes the parent's buffered commands to the inherited socket | The child never writes to or shuts down an inherited descriptor |
 | JetStream | Legacy API shape built around push subscriptions; `fetch` has no heartbeats; no ordered consumer, no continuous consume, no async publish, no Object Store, no purge or list calls | The modern object model, with the consumer machinery in one reusable place |
@@ -776,6 +776,7 @@ Every option, with its default:
 | `echo:` | `true` | receive your own publishes on your own subscriptions |
 | `inbox_prefix:` | `"_INBOX"` | prefix for reply subjects |
 | `max_pending:`, `max_pending_bytes:` | `65_536`, `64 MiB` | default per-subscription limits |
+| `worker_threads:` | `16` | most threads running subscription blocks at once |
 | `drain_timeout:` | `30` | default for `drain` |
 | `validate_subjects:` | `true` | check publish subjects for wildcards and empty tokens |
 | `token:`, `user:`, `password:`, `jwt:`, `nkey_seed:`, `nkey_seed_file:`, `credentials:`, `credentials_file:`, `auth:` | `nil` | see 5.11 |
@@ -809,7 +810,7 @@ the server compares,
 ### 6.3 Subscribing
 
 ```ruby
-sub = nc.subscribe("orders.*") { |msg| handle(msg) }               # worker thread per subscription
+sub = nc.subscribe("orders.*") { |msg| handle(msg) }               # runs on the client's worker pool
 sub = nc.subscribe("jobs", queue: "workers") { |msg| work(msg) }   # queue group
 sub = nc.subscribe("events")                                       # no block: pull messages yourself
 
@@ -819,8 +820,8 @@ sub.each(idle_timeout: 1) { |msg| ... }  # returns when nothing has arrived for 
 ```
 
 Options: `queue:`, `max_pending:`, `max_pending_bytes:`, `max:` (auto-unsubscribe after that many
-messages), `concurrency:` (worker threads for this subscription, default 1, which preserves
-order).
+messages), `concurrency:` (workers that may run this subscription's block at once, default 1, which preserves
+order), `dedicated:` (run the block on threads of its own instead of the client's pool).
 
 `Subscription` methods: `unsubscribe`, `unsubscribe(after: n)`, `drain(timeout:)`, `subject`,
 `queue`, `sid`, `pending`, `pending_bytes`, `delivered`, `dropped`, `closed?`, `draining?`,
@@ -1627,13 +1628,14 @@ is the caller's decision.
 | events | 0 or 1 per client | first handler registered until `:close` is delivered | runs connection event handlers in order |
 | reconnect | 0 or 1 | one outage | the reconnect loop |
 | close | 0 or 1 | transient | closes the client when the socket is lost and reconnect is not allowed |
-| subscription worker | `concurrency` per subscription with a block | until the subscription closes | runs the user's block |
+| worker | up to `worker_threads` per client, started when a block subscription has messages | until idle for 30 s, or close | runs subscription blocks, a batch of 64 messages per subscription per turn |
+| dedicated worker | up to `concurrency` per subscription with `dedicated: true` | until idle for 30 s, or the subscription ends | runs that subscription's block |
 | consume worker | `concurrency` per `consume` | until stopped | runs the block, issues pulls, serves the control queue; a `messages` iterator has no worker, the thread calling `next` does this work |
 | publish errors | 0 or 1 per JetStream context | from `on_publish_error` on | runs the handler for failed asynchronous publishes |
 
 Key/Value and Object Store watchers with a block are consume loops and run on a consume worker;
 endpoints of a service are subscriptions. Threads are named `tether:reader`, `tether:flusher`,
-`tether:timer`, `tether:events`, `tether:reconnect`, `tether:close`, `tether:sub:<subject>`,
+`tether:timer`, `tether:events`, `tether:reconnect`, `tether:close`, `tether:worker`, `tether:sub:<subject>`,
 `tether:consume:<consumer>` and `tether:publish-errors`, and none sets `abort_on_exception`. The
 name is how `Client#drain` knows it was called from a tether thread. A connected client with no
 handlers and no block subscriptions runs three threads. Threads end because the thing they block on
@@ -1664,6 +1666,10 @@ a lock held.
 
 - Publishes from one thread reach the server in the order they were made. Publishes from different
   threads are interleaved at frame boundaries only.
+- A subscription is scheduled on the pool as one job, never one per message, and at most `concurrency`
+  workers hold it at once; a worker handles up to 64 of its messages and then puts it at the back of the
+  line. A block that blocks holds one worker until it returns, so once every worker is held the other
+  subscriptions wait; `dedicated: true` is for blocks that wait on slow I/O.
 - Messages on one subscription are delivered in the order received. With `concurrency: 1` the
   block never runs concurrently with itself.
 - A reply is never delayed by a user handler.

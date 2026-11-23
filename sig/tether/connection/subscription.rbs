@@ -4,6 +4,8 @@ module Tether
       type state = :active | :draining | :closed
       type outcome = :queued | :last | :slow | :dropped | :closed
 
+      BATCH: Integer
+
       attr_reader sid: String
       attr_reader subject: String
       attr_reader queue: String?
@@ -25,10 +27,12 @@ module Tether
       @state: state
       @slow: bool
       @error: Exception?
-      @workers: Array[Thread]
-      @running: Integer
+      @concurrency: Integer
+      @dedicated: bool
+      @jobs: Integer
+      @pool: WorkerPool?
 
-      def initialize: (client: Client, sid: String, subject: String, max_pending: Integer, max_pending_bytes: Integer, ?queue: String?, ?max: Integer?, ?concurrency: Integer) ?{ (Protocol::Msg msg) -> void } -> void
+      def initialize: (client: Client, sid: String, subject: String, max_pending: Integer, max_pending_bytes: Integer, ?queue: String?, ?max: Integer?, ?concurrency: Integer, ?dedicated: bool) ?{ (Protocol::Msg msg) -> void } -> void
       def deliver: (Protocol::Msg msg) -> bool
       def next: (?timeout: timeout) -> Protocol::Msg
       def each: (?idle_timeout: Numeric?) { (Protocol::Msg msg) -> void } -> self
@@ -38,6 +42,7 @@ module Tether
       def start_drain: () -> bool
       def finish_drain: (Deadline deadline) -> void
       def close: (?Exception? error) -> void
+      def run: () -> bool
       def abandon: () -> void
       def fail: (Exception error) -> void
       def replay_frames: () -> String
@@ -57,7 +62,11 @@ module Tether
       def limit: (Integer count) -> bool
       def account: (Protocol::Msg msg) -> Protocol::Msg
       def finish_intake: () -> void
-      def start_worker: () -> Thread
+      def own_pool: () -> WorkerPool
+      def claim_job: () -> bool
+      def more?: () -> bool
+      def job_done: () -> void
+      def idle?: () -> bool
       def invoke: (Protocol::Msg msg) -> void
       def finished: () -> void
     end

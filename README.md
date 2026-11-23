@@ -30,7 +30,7 @@ nc.drain
 ```
 
 `publish` is fire and forget: it returns once the message is buffered, and a background thread writes it. A block given
-to `subscribe` runs on that subscription's own worker thread. `request` returns the first reply or raises
+to `subscribe` runs on the client's worker threads, shared by all its subscriptions. `request` returns the first reply or raises
 `Tether::NoRespondersError` at once when nobody is subscribed, and `Tether::TimeoutError` when no reply arrives in time.
 `drain` unsubscribes, lets the handlers finish what was received, and closes.
 
@@ -55,6 +55,7 @@ that names it, not a silently ignored typo. The options you are most likely to n
 | `ping_interval:`, `max_pings_out:` | `120`, `2` | keepalive: seconds between PINGs, and how many may go unanswered |
 | `echo:` | `true` | receive your own publishes on your own subscriptions |
 | `max_pending:`, `max_pending_bytes:` | `65_536`, `64 MiB` | default per-subscription queue limits |
+| `worker_threads:` | `16` | most threads running subscription blocks at once, shared by every subscription |
 | `drain_timeout:` | `30` | default timeout of `drain` |
 | `logger:` | `nil` | a `Logger` for errors nobody handles; nothing is written without one |
 
@@ -163,7 +164,8 @@ Two things follow from this design:
 ## Subscriptions
 
 ```ruby
-sub = nc.subscribe("orders.*") { |msg| handle(msg) }                  # a worker thread calls the block
+sub = nc.subscribe("orders.*") { |msg| handle(msg) }                  # a shared worker thread calls the block
+sub = nc.subscribe("slow", dedicated: true) { |msg| block_for_long(msg) }  # threads of its own, outside the pool
 sub = nc.subscribe("jobs", queue: "workers") { |msg| work(msg) }      # queue group: one member gets each message
 sub = nc.subscribe("jobs", concurrency: 4) { |msg| work(msg) }        # four workers; gives up ordering
 sub = nc.subscribe("events", max: 10) { |msg| handle(msg) }           # ends itself after ten messages
@@ -187,7 +189,10 @@ nc.subscribe("audit.login") do |msg|
 end
 ```
 
-Each subscription has its own bounded queue, so a slow handler delays nobody else. When the queue is full
+Each subscription has its own bounded queue. Blocks run on a pool of up to `worker_threads:` threads, started on demand
+and stopped when idle; a worker hands a subscription back after a batch of 64 messages so a busy one cannot hold up the
+rest. A block that blocks occupies a worker until it returns: give a subscription that waits on slow I/O
+`dedicated: true` so it never takes a worker from the others. When the queue is full
 (`max_pending:`, `max_pending_bytes:`) new messages are dropped, `sub.dropped` counts them, and a
 `Tether::SlowConsumerError` is reported to `on_error` once per episode. A block that raises does not end the
 subscription: the exception is reported to `on_error` as a `Tether::HandlerError` with `cause` and `msg`, and delivery
@@ -466,7 +471,8 @@ Tether uses plain threads, all named `tether:*`, and none of them is ever killed
 | flusher | 1 per connection | writes buffered frames |
 | timer | 1 per connection | keepalive pings, heartbeat checks, timeouts |
 | events | 0 or 1 | runs `on_*` handlers, in order |
-| subscription worker | `concurrency` per subscription with a block | runs your block |
+| worker | up to `worker_threads:` per connection, started on demand | runs subscription blocks |
+| subscription worker | `concurrency` per subscription with `dedicated: true` | runs that subscription's block |
 | consume worker | `concurrency` per `consume` | runs your block and keeps the buffer full |
 
 A forked child inherits the socket but none of the threads. Tether notices the new process on the first call made in the
