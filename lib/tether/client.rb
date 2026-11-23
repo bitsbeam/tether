@@ -14,6 +14,10 @@ module Tether
     DEFAULT_REQUEST_TIMEOUT = 2
     DEFAULT_FLUSH_TIMEOUT = 10
 
+    # Publish subjects that passed validation are remembered, up to this many,
+    # so a hot subject is a hash lookup instead of a regex scan on every call.
+    CHECKED_SUBJECTS_LIMIT = 1024
+
     # @return [Options] the validated options this client was built with
     attr_reader :options
 
@@ -47,6 +51,7 @@ module Tether
       @lock = Mutex.new
       @inbox = nil
       @inbox_pid = nil
+      @checked_subjects = {}
     end
 
     # Connects to the first reachable server.
@@ -411,7 +416,11 @@ module Tether
     end
 
     def check_subject(subject)
+      return if @checked_subjects.key?(subject)
+
       @options.validate_subjects ? Protocol::Subject.literal!(subject) : Protocol::Subject.check!(subject)
+      @checked_subjects.clear if @checked_subjects.size >= CHECKED_SUBJECTS_LIMIT
+      @checked_subjects[subject] = true
     end
 
     def encode(subject, payload, reply_to, headers)

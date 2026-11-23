@@ -12,6 +12,7 @@ module Tether
     DEFAULT_URL: String
     DEFAULT_REQUEST_TIMEOUT: Integer
     DEFAULT_FLUSH_TIMEOUT: Integer
+    CHECKED_SUBJECTS_LIMIT: Integer
 
     attr_reader options: Options
 
@@ -19,6 +20,7 @@ module Tether
     @lock: Thread::Mutex
     @inbox: Connection::Inbox?
     @inbox_pid: Integer?
+    @checked_subjects: Hash[String, true]
 
     def self.connect: (?urls? urls, **untyped options) -> Client
                     | [T] (?urls? urls, **untyped options) { (Client) -> T } -> T
@@ -79,7 +81,7 @@ module Tether
     def ensure_accepting: () -> void
     def ensure_started: () -> void
     def own_thread?: () -> bool
-    def check_subject: (String subject) -> String
+    def check_subject: (String subject) -> void
     def encode: (String subject, String? payload, String? reply_to, headers? headers) -> String
     def check_size: (String subject, Integer size) -> true
     def inbox: () -> Connection::Inbox
