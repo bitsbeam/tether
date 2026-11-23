@@ -1,0 +1,245 @@
+{
+  "publish-16b": {
+    "tether": {
+      "messages": 500000,
+      "msgs_per_s": 865437,
+      "mb_per_s": 13.8,
+      "allocs_per_msg": 2.0,
+      "runs": 3
+    },
+    "nats-pure": {
+      "messages": 500000,
+      "msgs_per_s": 1154622,
+      "mb_per_s": 18.5,
+      "allocs_per_msg": 3.0,
+      "runs": 3
+    }
+  },
+  "publish-128b": {
+    "tether": {
+      "messages": 400000,
+      "msgs_per_s": 753645,
+      "mb_per_s": 96.5,
+      "allocs_per_msg": 2.0,
+      "runs": 3
+    },
+    "nats-pure": {
+      "messages": 400000,
+      "msgs_per_s": 908835,
+      "mb_per_s": 116.3,
+      "allocs_per_msg": 3.0,
+      "runs": 3
+    }
+  },
+  "publish-1kb": {
+    "tether": {
+      "messages": 200000,
+      "msgs_per_s": 187253,
+      "mb_per_s": 191.7,
+      "allocs_per_msg": 2.02,
+      "runs": 3
+    },
+    "nats-pure": {
+      "messages": 200000,
+      "msgs_per_s": 174272,
+      "mb_per_s": 178.5,
+      "allocs_per_msg": 3.01,
+      "runs": 3
+    }
+  },
+  "publish-headers": {
+    "tether": {
+      "messages": 200000,
+      "msgs_per_s": 282074,
+      "mb_per_s": 36.1,
+      "allocs_per_msg": 10.0,
+      "runs": 3
+    },
+    "nats-pure": {
+      "messages": 200000,
+      "msgs_per_s": 424152,
+      "mb_per_s": 54.3,
+      "allocs_per_msg": 10.0,
+      "runs": 3
+    }
+  },
+  "publish-4-threads": {
+    "tether": {
+      "messages": 400000,
+      "msgs_per_s": 616779,
+      "mb_per_s": 78.9,
+      "allocs_per_msg": 2.0,
+      "runs": 3
+    },
+    "nats-pure": {
+      "messages": 400000,
+      "msgs_per_s": 897622,
+      "mb_per_s": 114.9,
+      "allocs_per_msg": 3.0,
+      "runs": 3
+    }
+  },
+  "subscribe-1-callback": {
+    "tether": {
+      "messages": 300000,
+      "expected": 300000,
+      "msgs_per_s": 425512,
+      "mb_per_s": 54.5,
+      "allocs_per_msg": 5.05,
+      "runs": 3
+    },
+    "nats-pure": {
+      "messages": 300000,
+      "expected": 300000,
+      "msgs_per_s": 86210,
+      "mb_per_s": 11.0,
+      "allocs_per_msg": 18.02,
+      "runs": 3
+    }
+  },
+  "subscribe-1-callback-1kb": {
+    "tether": {
+      "messages": 150000,
+      "expected": 150000,
+      "msgs_per_s": 98297,
+      "mb_per_s": 100.7,
+      "allocs_per_msg": 5.24,
+      "runs": 3
+    },
+    "nats-pure": {
+      "messages": 150000,
+      "expected": 150000,
+      "msgs_per_s": 58383,
+      "mb_per_s": 59.8,
+      "allocs_per_msg": 18.24,
+      "runs": 3
+    }
+  },
+  "subscribe-1-sync": {
+    "tether": {
+      "messages": 300000,
+      "expected": 300000,
+      "msgs_per_s": 379245,
+      "allocs_per_msg": 6.02,
+      "runs": 3
+    },
+    "nats-pure": {
+      "messages": 300000,
+      "expected": 300000,
+      "msgs_per_s": 300584,
+      "allocs_per_msg": 10.02,
+      "runs": 3
+    }
+  },
+  "subscribe-1000-subjects": {
+    "tether": {
+      "messages": 300000,
+      "expected": 300000,
+      "msgs_per_s": 311630,
+      "mb_per_s": 39.9,
+      "allocs_per_msg": 5.61,
+      "runs": 3
+    },
+    "nats-pure": {
+      "messages": 300000,
+      "expected": 300000,
+      "msgs_per_s": 124366,
+      "mb_per_s": 15.9,
+      "allocs_per_msg": 18.04,
+      "runs": 3
+    }
+  },
+  "request-sequential": {
+    "tether": {
+      "requests": 20000,
+      "req_per_s": 1005,
+      "allocs_per_req": 43.0,
+      "p50_us": 937,
+      "p99_us": 2159,
+      "max_us": 13069,
+      "runs": 3
+    },
+    "nats-pure": {
+      "requests": 20000,
+      "req_per_s": 874,
+      "allocs_per_req": 89.0,
+      "p50_us": 1093,
+      "p99_us": 2524,
+      "max_us": 8721,
+      "runs": 3
+    }
+  },
+  "request-8-threads": {
+    "tether": {
+      "requests": 40000,
+      "req_per_s": 4349,
+      "allocs_per_req": 31.2,
+      "p50_us": 1478,
+      "p99_us": 6648,
+      "max_us": 26046,
+      "runs": 3
+    },
+    "nats-pure": {
+      "requests": 40000,
+      "req_per_s": 3232,
+      "allocs_per_req": 76.7,
+      "p50_us": 2108,
+      "p99_us": 7767,
+      "max_us": 43945,
+      "runs": 3
+    }
+  },
+  "connect": {
+    "tether": {
+      "connections": 100,
+      "ms_per_connect": 3.23,
+      "runs": 3
+    },
+    "nats-pure": {
+      "connections": 100,
+      "ms_per_connect": 2.85,
+      "runs": 3
+    }
+  },
+  "publish-16kb": {
+    "tether": {
+      "messages": 40000,
+      "msgs_per_s": 7311,
+      "mb_per_s": 119.8,
+      "allocs_per_msg": 2.33,
+      "runs": 3
+    }
+  },
+  "subscribe-fanout-10": {
+    "tether": {
+      "messages": 200000,
+      "expected": 200000,
+      "msgs_per_s": 392372,
+      "mb_per_s": 50.2,
+      "allocs_per_msg": 5.06,
+      "runs": 3
+    },
+    "nats-pure": {
+      "messages": 200000,
+      "expected": 200000,
+      "msgs_per_s": 69887,
+      "mb_per_s": 8.9,
+      "allocs_per_msg": 18.02,
+      "runs": 3
+    }
+  },
+  "idle-5000-subscriptions": {
+    "tether": {
+      "subscriptions": 5000,
+      "rss_growth_kb": 5888,
+      "threads_added": -3,
+      "runs": 3
+    },
+    "nats-pure": {
+      "subscriptions": 5000,
+      "rss_growth_kb": 4352,
+      "threads_added": -3,
+      "runs": 3
+    }
+  }
+}
