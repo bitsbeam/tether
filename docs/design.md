@@ -971,6 +971,7 @@ stream = js.create_stream(name: "ORDERS", subjects: ["orders.>"])
 stream = js.update_stream(name: "ORDERS", subjects: ["orders.>", "returns.>"])
 stream = js.create_or_update_stream(name: "ORDERS", subjects: ["orders.>"])
 stream = js.stream("ORDERS")                       # raises StreamNotFoundError
+stream = js.stream("ORDERS", lookup: false)        # bound by name, no round trip
 js.stream?("ORDERS")
 js.delete_stream("ORDERS")
 js.streams(subject: "orders.*")                    # lazy Enumerator of Stream, paged underneath
@@ -989,6 +990,7 @@ stream.get(last_for: "orders.eu.1")
 stream.get(next_for: "orders.>", from: 100)
 stream.each_message(from: 1, subject: "orders.>", start_time: nil, batch: 100, max_bytes: nil) { |m| }
 stream.last_messages(["orders.eu.>", "orders.us.>"], up_to_sequence: nil, up_to_time: nil)
+stream.count(subject: "orders.eu.>", from: 1)      # => Integer, counted by the server
 stream.delete_message(42, erase: true)
 stream.delete
 stream.step_down(placement: nil) ; stream.remove_peer(name)
@@ -1000,13 +1002,20 @@ js.restore_stream(config, state) { |writer| writer.write(io.read(64 * 1024)) unt
 `false` forces one. A `StoredMessage` has `subject`, `sequence`, `data`, `headers`, `time`.
 Listing methods return lazy enumerators, so `js.streams.first(3)` fetches one page.
 
+`lookup: false` skips the `STREAM.INFO` request, for code that already knows the stream exists and
+only purges, deletes or reads. Its `cached_info` holds the name alone until `info` is called, so
+`get` reads through the JSON API unless it is given `direct:`, and a missing stream surfaces as
+the error of the first call that needs it.
+
 `each_message` is the batched Direct Get: it asks for `batch` messages at a time, reads until the
 `204 EOB` status, and uses the `Nats-Num-Pending` and `Nats-UpTo-Sequence` headers of that status
 to request the next page against a consistent view. `last_messages` is the multi-subject form
 (`multi_last`), returning the last message for each subject that matches, and raises
 `TooManyResultsError` when the server answers `413` because the filters match more than its limit
-of subjects. Both need `allow_direct` on the stream and raise `ServiceUnavailableError` without it,
-since nothing answers a Direct Get there.
+of subjects. `count` is a Direct Get of one message: the server sends it with how many more
+match in `Nats-Num-Pending`, so counting costs one small request however many messages there are,
+and a `404` is a count of zero. All three need `allow_direct` on the stream and raise
+`ServiceUnavailableError` without it, since nothing answers a Direct Get there.
 
 `delete_message` erases by default, overwriting the message's bytes on disk, as the server does
 when not told otherwise; `erase: false` only marks it deleted, which is faster.
@@ -1366,7 +1375,8 @@ consumer, as specified in [`04-kv-object-services.md`](protocol/04-kv-object-ser
 ```ruby
 kv = js.create_key_value(bucket: "config", history: 5, ttl: nil, max_bytes: nil, max_value_size: nil,
                          storage: :file, replicas: 1, compression: false, description: nil,
-                         limit_marker_ttl: nil, mirror: nil, sources: nil, placement: nil,
+                         limit_marker_ttl: nil, allow_message_ttl: false, mirror: nil, sources: nil,
+                         placement: nil,
                          republish: nil, metadata: nil)   # history defaults to 1
 kv = js.key_value("config")                 # raises BucketNotFoundError, or BadBucketError
 kv = js.update_key_value(bucket: "config", history: 10)   # options not given return to their defaults
@@ -1439,7 +1449,9 @@ write to the same key is in flight; both are translated.
 
 Keys and bucket names are validated against the character sets of ADR-6 and ADR-8, raising
 `InvalidKeyError` and `InvalidBucketNameError`. Per-key TTLs (`create(ttl:)`, `purge(ttl:)`) need a
-bucket with `limit_marker_ttl:`, which in turn needs a server at JetStream API level 1.
+bucket with `limit_marker_ttl:` or `allow_message_ttl: true`, either of which needs a server at
+JetStream API level 1. With `limit_marker_ttl:` an expired key leaves a marker that lives that many
+seconds; with `allow_message_ttl: true` alone it disappears, as if it had never been written.
 Under a JetStream domain or API prefix, the bucket's subjects are prefixed as chapter 4 specifies,
 and a bucket that is a mirror reads through its own stream and writes through the origin's
 subjects.
