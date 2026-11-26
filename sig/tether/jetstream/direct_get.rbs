@@ -14,6 +14,7 @@ module Tether
 
       def initialize: (JetStream jetstream, String stream) -> void
       def get: (request request, Deadline deadline) -> StoredMessage
+      def count: (request request, Deadline deadline) -> Integer
       def each: (request request, Tether::timeout timeout) { (StoredMessage message) -> void } -> void
 
       private

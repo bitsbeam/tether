@@ -684,6 +684,47 @@ RSpec.describe Tether::JetStream::Stream do
     end
   end
 
+  describe "#count" do
+    def store_keys
+      stream
+      %w[eu.a eu.b us.a eu.a us.b].each { |key| js.publish("#{name}.#{key}", "v") }
+    end
+
+    it "counts every message" do
+      store_keys
+
+      expect(stream.count).to eq(5)
+    end
+
+    it "counts the messages on subjects matching a filter" do
+      store_keys
+
+      expect(stream.count(subject: "#{name}.eu.*")).to eq(3)
+    end
+
+    it "counts only the messages from a sequence on" do
+      store_keys
+
+      expect(stream.count(from: 4)).to eq(2)
+    end
+
+    it "returns 0 when no message matches" do
+      store_keys
+
+      expect(stream.count(subject: "#{name}.none")).to eq(0)
+    end
+
+    context "when the stream does not allow direct access" do
+      let(:direct) { false }
+
+      it "raises ServiceUnavailableError" do
+        store_keys
+
+        expect { stream.count }.to raise_error(Tether::JetStream::ServiceUnavailableError)
+      end
+    end
+  end
+
   describe "#delete_message" do
     it "removes the message" do
       store(3)

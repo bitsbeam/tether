@@ -17,6 +17,7 @@ module Tether
       def each_message: (?from: Integer, ?subject: String?, ?start_time: Time?, ?batch: Integer, ?max_bytes: Integer?, ?timeout: Tether::timeout) { (StoredMessage message) -> void } -> self
                       | (?from: Integer, ?subject: String?, ?start_time: Time?, ?batch: Integer, ?max_bytes: Integer?, ?timeout: Tether::timeout) -> Enumerator[StoredMessage, self]
       def last_messages: (Array[String] | String subjects, ?up_to_sequence: Integer?, ?up_to_time: Time?, ?timeout: Tether::timeout) -> Array[StoredMessage]
+      def count: (?subject: String?, ?from: Integer, ?timeout: Tether::timeout) -> Integer
       def delete_message: (Integer sequence, ?erase: bool, ?timeout: Tether::timeout) -> true
       def step_down: (?placement: (Placement | Hash[Symbol, untyped])?, ?timeout: Tether::timeout) -> true
       def remove_peer: (String name, ?timeout: Tether::timeout) -> true

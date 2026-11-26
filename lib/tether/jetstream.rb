@@ -75,10 +75,15 @@ module Tether
     # Looks a stream up.
     #
     # @param name [String] the stream's name
+    # @param lookup [Boolean] false returns a handle bound by name alone, without asking the server: its
+    #   {Stream#cached_info} holds only the name until {Stream#info} is called, and {Stream#get} reads through
+    #   the JSON API unless it is given `direct:`
     # @param timeout [Numeric, Deadline, nil] how long to wait
     # @return [Stream] a handle to the stream
-    # @raise [StreamNotFoundError] if the stream does not exist
-    def stream(name, timeout: nil)
+    # @raise [StreamNotFoundError] if the stream does not exist and was looked up
+    def stream(name, lookup: true, timeout: nil)
+      return Stream.new(self, StreamInfo.new(config: { name: check_name(name) })) unless lookup
+
       Stream.new(self, StreamInfo.from_h(@api.request("STREAM.INFO.#{check_name(name)}", timeout: timeout)))
     end
 

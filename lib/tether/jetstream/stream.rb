@@ -151,6 +151,18 @@ module Tether
         messages
       end
 
+      # Counts the messages on subjects matching a filter without reading them: the server answers a Direct Get of
+      # one message with how many more match. The stream must allow direct access.
+      #
+      # @param subject [String, nil] only messages on subjects matching this filter; nil counts every message
+      # @param from [Integer] count only the messages at or after this sequence
+      # @param timeout [Numeric, Deadline, nil] how long to wait
+      # @return [Integer] how many messages match
+      # @raise [ServiceUnavailableError] if the stream does not allow direct access
+      def count(subject: nil, from: 1, timeout: nil)
+        direct_get.count({ "seq" => from, "next_by_subj" => subject || ">" }, @api.deadline(timeout))
+      end
+
       # Removes one message.
       #
       # @param sequence [Integer] the message's sequence

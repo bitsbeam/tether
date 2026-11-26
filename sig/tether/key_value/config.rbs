@@ -18,6 +18,7 @@ module Tether
       attr_reader replicas: Integer
       attr_reader compression: bool
       attr_reader limit_marker_ttl: Numeric?
+      attr_reader allow_message_ttl: bool
       attr_reader mirror: JetStream::StreamSource?
       attr_reader sources: Array[JetStream::StreamSource]?
       attr_reader placement: JetStream::Placement?
@@ -27,7 +28,7 @@ module Tether
       def self.from_stream: (JetStream::StreamConfig config) -> Config
       private def self.limit: (Numeric? value) -> Numeric?
 
-      def initialize: (bucket: String, ?history: Integer, ?ttl: Numeric?, ?max_bytes: Integer?, ?max_value_size: Integer?, ?storage: Symbol, ?replicas: Integer, ?compression: boolish, ?description: String?, ?limit_marker_ttl: Numeric?, ?mirror: source?, ?sources: Array[source]?, ?placement: (JetStream::Placement | Hash[Symbol, untyped])?, ?republish: (JetStream::Republish | Hash[Symbol, untyped])?, ?metadata: Hash[String, String]?, ?validate: bool) -> void
+      def initialize: (bucket: String, ?history: Integer, ?ttl: Numeric?, ?max_bytes: Integer?, ?max_value_size: Integer?, ?storage: Symbol, ?replicas: Integer, ?compression: boolish, ?description: String?, ?limit_marker_ttl: Numeric?, ?allow_message_ttl: boolish, ?mirror: source?, ?sources: Array[source]?, ?placement: (JetStream::Placement | Hash[Symbol, untyped])?, ?republish: (JetStream::Republish | Hash[Symbol, untyped])?, ?metadata: Hash[String, String]?, ?validate: bool) -> void
       def stream_config: () -> JetStream::StreamConfig
       def ==: (untyped other) -> bool
       alias eql? ==

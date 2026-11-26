@@ -23,7 +23,7 @@ module Tether
     def self.names: (JetStream jetstream, ?timeout: Tether::timeout) -> Enumerator::Lazy[String, void]
     def self.list: (JetStream jetstream, ?timeout: Tether::timeout) -> Enumerator::Lazy[KeyValue, void]
 
-    private def self.require_limit_markers: (JetStream jetstream, Deadline deadline) -> void
+    private def self.require_key_ttls: (JetStream jetstream, Deadline deadline) -> void
 
     def initialize: (JetStream jetstream, JetStream::Stream stream) -> void
     def get: (String key, ?revision: Integer?, ?timeout: Tether::timeout) -> Entry?

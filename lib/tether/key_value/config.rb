@@ -42,6 +42,9 @@ module Tether
       # @return [Numeric, nil] seconds the marker of an expired key lives; setting it enables per-key TTLs
       attr_reader :limit_marker_ttl
 
+      # @return [Boolean] whether keys may carry their own TTL without leaving a marker when they expire
+      attr_reader :allow_message_ttl
+
       # @return [JetStream::StreamSource, nil] the bucket this one is a read-only copy of
       attr_reader :mirror
 
@@ -67,7 +70,9 @@ module Tether
             max_bytes: limit(config.max_bytes), max_value_size: limit(config.max_message_size),
             storage: config.storage || :file, replicas: config.replicas || 1,
             compression: ![nil, :none].include?(config.compression),
-            limit_marker_ttl: limit(config.subject_delete_marker_ttl), mirror: config.mirror,
+            limit_marker_ttl: limit(config.subject_delete_marker_ttl),
+            allow_message_ttl: config.allow_message_ttl == true && !limit(config.subject_delete_marker_ttl),
+            mirror: config.mirror,
             sources: config.sources, placement: config.placement, republish: config.republish,
             metadata: config.metadata, validate: false)
       end
@@ -90,6 +95,8 @@ module Tether
       # @param description [String, nil] a description
       # @param limit_marker_ttl [Numeric, nil] seconds the marker of an expired key lives, at least 1;
       #   enables per-key TTLs and cannot be turned off again
+      # @param allow_message_ttl [Boolean] enables per-key TTLs without limit markers: an expired key is gone, as if
+      #   never written, and watchers are not told; cannot be turned off again
       # @param mirror [JetStream::StreamSource, Hash, nil] the bucket to mirror: `name:` and optionally `external:`
       # @param sources [Array<JetStream::StreamSource, Hash>, nil] buckets to copy keys from
       # @param placement [JetStream::Placement, Hash, nil] where the bucket's replicas should be placed
@@ -99,8 +106,9 @@ module Tether
       # @raise [InvalidBucketNameError] if the name breaks the rules
       # @raise [ArgumentError] if an option is out of range or two options contradict each other
       def initialize(bucket:, history: 1, ttl: nil, max_bytes: nil, max_value_size: nil, storage: :file,
-                     replicas: 1, compression: false, description: nil, limit_marker_ttl: nil, mirror: nil,
-                     sources: nil, placement: nil, republish: nil, metadata: nil, validate: true)
+                     replicas: 1, compression: false, description: nil, limit_marker_ttl: nil,
+                     allow_message_ttl: false, mirror: nil, sources: nil, placement: nil, republish: nil,
+                     metadata: nil, validate: true)
         @bucket = validate ? Naming.bucket!(bucket) : bucket.to_s
         @history = history
         @ttl = ttl
@@ -111,6 +119,7 @@ module Tether
         @compression = compression ? true : false
         @description = description
         @limit_marker_ttl = limit_marker_ttl
+        @allow_message_ttl = allow_message_ttl ? true : false
         @mirror = mirror && JetStream::StreamSource.coerce(mirror)
         @sources = sources&.map { |source| JetStream::StreamSource.coerce(source) }
         @placement = placement && JetStream::Placement.coerce(placement)
@@ -156,6 +165,7 @@ module Tether
       end
 
       def check_limit_marker
+        raise ArgumentError, "allow_message_ttl: cannot be used on a mirror" if @allow_message_ttl && @mirror
         return unless @limit_marker_ttl
         raise ArgumentError, "limit_marker_ttl: cannot be used on a mirror" if @mirror
         return if @limit_marker_ttl >= MIN_LIMIT_MARKER_TTL
@@ -177,7 +187,8 @@ module Tether
 
       def behavior
         { deny_delete: true, allow_rollup: true, allow_direct: true, compression: @compression ? :s2 : :none,
-          allow_message_ttl: (true if @limit_marker_ttl), subject_delete_marker_ttl: @limit_marker_ttl }
+          allow_message_ttl: (true if @limit_marker_ttl || @allow_message_ttl),
+          subject_delete_marker_ttl: @limit_marker_ttl }
       end
 
       def copies

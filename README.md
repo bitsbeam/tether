@@ -213,6 +213,7 @@ js = nc.jetstream                                     # or nc.jetstream(domain: 
 
 stream = js.create_stream(name: "ORDERS", subjects: ["orders.>"], max_age: 86_400, replicas: 1)
 stream = js.stream("ORDERS")                          # raises Tether::JetStream::StreamNotFoundError
+stream = js.stream("ORDERS", lookup: false)           # bound by name, no round trip; info only once asked for
 stream = js.create_or_update_stream(name: "ORDERS", subjects: ["orders.>", "returns.>"])
 
 stream.info.state.messages                            # fresh info from the server
@@ -220,6 +221,7 @@ stream.update(max_age: 3600)                          # merges into the current 
 stream.get(42)                                        # a stored message by sequence
 stream.get(last_for: "orders.created")
 stream.purge(subject: "orders.eu.>")                  # => how many were removed
+stream.count(subject: "orders.eu.>")                  # counted by the server without reading them; needs allow_direct
 js.stream_names.to_a
 js.delete_stream("ORDERS")
 ```
@@ -367,6 +369,9 @@ kv.create("lock", "me")                     # raises KeyExistsError unless the k
 kv.update("region", "ap", revision: entry.revision)   # raises RevisionMismatchError if someone wrote in between
 kv.delete("lock")                           # history kept
 kv.purge("lock")                            # history dropped
+
+ttl = js.create_key_value(bucket: "locks", allow_message_ttl: true)   # or limit_marker_ttl: 60 to leave a marker
+ttl.create("lock", "me", ttl: 30)           # gone after 30 seconds, as if never written
 
 kv.keys.to_a                                # live keys; kv.keys("limits.>") filters
 kv.history("region")                        # every kept revision, oldest first

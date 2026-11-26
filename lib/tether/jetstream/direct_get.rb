@@ -44,6 +44,22 @@ module Tether
         raise unavailable
       end
 
+      # Counts the messages a batched request would return, by asking for one and reading how many are left.
+      #
+      # @param request [Hash{String => Object}] `seq` and `next_by_subj`
+      # @param deadline [Deadline] how long to wait
+      # @return [Integer] how many messages match
+      # @raise [ServiceUnavailableError] if the stream is missing or does not allow direct access
+      def count(request, deadline)
+        reply = @client.request(@subject, JSON.generate(request.merge("batch" => 1)), timeout: deadline)
+        return 0 if reply.status == Protocol::Headers::NOT_FOUND
+        raise refusal(reply) if reply.status
+
+        1 + reply.headers[NUM_PENDING].to_i
+      rescue NoRespondersError
+        raise unavailable
+      end
+
       # Reads a series of messages a page at a time, following the end-of-batch
       # status of each page to the next one.
       #

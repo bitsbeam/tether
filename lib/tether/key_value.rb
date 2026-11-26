@@ -34,11 +34,11 @@ module Tether
       # @param options [Hash{Symbol => Object}] see {Config#initialize}
       # @return [KeyValue] the bucket
       # @raise [BucketExistsError] if the bucket exists with other options
-      # @raise [Error] if limit markers are asked of a server that does not implement them
+      # @raise [Error] if per-key TTLs are asked of a server that does not implement them
       def create(jetstream, timeout: nil, **options)
         config = Config.new(**options)
         deadline = jetstream.api.deadline(timeout)
-        require_limit_markers(jetstream, deadline) if config.limit_marker_ttl
+        require_key_ttls(jetstream, deadline) if config.limit_marker_ttl || config.allow_message_ttl
         new(jetstream, jetstream.create_stream(config.stream_config, timeout: deadline))
       rescue JetStream::StreamNameInUseError
         raise BucketExistsError, "bucket #{config.bucket} exists with a different configuration"
@@ -120,11 +120,11 @@ module Tether
 
       private
 
-      def require_limit_markers(jetstream, deadline)
+      def require_key_ttls(jetstream, deadline)
         level = jetstream.account_info(timeout: deadline).api.to_h["level"].to_i
         return if level >= MIN_API_LEVEL
 
-        raise Error, "limit marker TTLs are not supported by the server (JetStream API level #{level})"
+        raise Error, "per-key TTLs are not supported by the server (JetStream API level #{level})"
       end
     end
 
@@ -207,7 +207,7 @@ module Tether
     #
     # @param key [String] the key
     # @param value [String] the value
-    # @param ttl [Numeric, nil] seconds the key lives; the bucket must have a `limit_marker_ttl`
+    # @param ttl [Numeric, nil] seconds the key lives; the bucket must have a `limit_marker_ttl` or `allow_message_ttl`
     # @param timeout [Numeric, Deadline, nil] how long every step together may take
     # @return [Integer] the new revision
     # @raise [KeyExistsError] if the key holds a value
@@ -258,7 +258,7 @@ module Tether
     # @param key [String] the key
     # @param revision [Integer, nil] purge only if the key's latest revision is this one
     # @param ttl [Numeric, nil] seconds after which the tombstone itself goes away; the bucket must have
-    #   a `limit_marker_ttl`
+    #   a `limit_marker_ttl` or `allow_message_ttl`
     # @param timeout [Numeric, Deadline, nil] how long to wait
     # @return [Integer] the revision of the tombstone
     # @raise [RevisionMismatchError] if the key is at another revision

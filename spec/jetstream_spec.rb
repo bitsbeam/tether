@@ -257,6 +257,15 @@ RSpec.describe Tether::JetStream do
       expect { js.stream(name) }.to raise_error(Tether::JetStream::StreamNotFoundError)
     end
 
+    it "binds a handle by name without asking the server when lookup is false" do
+      stream = js.stream(name, lookup: false)
+      make(subjects: ["#{name}.>"])
+      js.publish("#{name}.a", "one")
+
+      expect(stream).to have_attributes(name: name)
+      expect(stream.get(1).data).to eq("one")
+    end
+
     it "raises ArgumentError for a name that cannot be part of a subject" do
       expect { js.stream("a b") }.to raise_error(ArgumentError, /invalid name/)
     end

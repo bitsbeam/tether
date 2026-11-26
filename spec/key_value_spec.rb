@@ -37,6 +37,19 @@ RSpec.describe Tether::KeyValue do
       expect(stream_config["metadata"]).to include("owner" => "spec")
     end
 
+    it "enables per-key TTLs without limit markers" do
+      require_limit_markers
+      make_bucket(allow_message_ttl: true)
+
+      expect(stream_config).to include("allow_msg_ttl" => true)
+      expect(stream_config).not_to have_key("subject_delete_marker_ttl")
+    end
+
+    it "raises ArgumentError for per-key TTLs on a mirror" do
+      expect { make_bucket(allow_message_ttl: true, mirror: { name: "origin" }) }
+        .to raise_error(ArgumentError, /allow_message_ttl/)
+    end
+
     it "uses the TTL as the duplicate window when it is below two minutes" do
       make_bucket(ttl: 30)
 
@@ -551,6 +564,25 @@ RSpec.describe Tether::KeyValue do
     it "passes the server's refusal on when the bucket has no per-key TTLs" do
       expect { kv.create("color", "blue", ttl: 5) }
         .to raise_error(Tether::JetStream::APIError) { |error| expect(error.err_code).to eq(10_166) }
+    end
+
+    context "with per-key TTLs and no limit markers" do
+      let(:kv) { make_bucket(allow_message_ttl: true) }
+
+      before { require_limit_markers }
+
+      it "lets the key expire without leaving a marker" do
+        kv.create("session", "token", ttl: 1)
+
+        expect(eventually(timeout: 10) { kv.history("session").empty? }).to be(true)
+      end
+
+      it "succeeds again once the key has expired" do
+        kv.create("session", "token", ttl: 1)
+        eventually(timeout: 10) { kv.get("session").nil? }
+
+        expect(kv.create("session", "again", ttl: 1)).to be > 1
+      end
     end
 
     context "with limit markers" do
@@ -1181,6 +1213,13 @@ RSpec.describe Tether::KeyValue do
 
       expect(created.config).to have_attributes(bucket: bucket, history: 7, ttl: 600, storage: :memory,
                                                 description: "settings", compression: false, replicas: 1)
+    end
+
+    it "reads per-key TTLs without limit markers back" do
+      require_limit_markers
+
+      expect(make_bucket(allow_message_ttl: true).config).to have_attributes(allow_message_ttl: true,
+                                                                             limit_marker_ttl: nil)
     end
   end
 

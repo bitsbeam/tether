@@ -19,7 +19,7 @@ module Tether
     def create_stream: (?stream_config? config, ?timeout: Tether::timeout, **untyped fields) -> Stream
     def update_stream: (?stream_config? config, ?timeout: Tether::timeout, **untyped fields) -> Stream
     def create_or_update_stream: (?stream_config? config, ?timeout: Tether::timeout, **untyped fields) -> Stream
-    def stream: (String name, ?timeout: Tether::timeout) -> Stream
+    def stream: (String name, ?lookup: bool, ?timeout: Tether::timeout) -> Stream
     def stream?: (String name, ?timeout: Tether::timeout) -> bool
     def delete_stream: (String name, ?timeout: Tether::timeout) -> bool
     def streams: (?subject: String?, ?timeout: Tether::timeout) -> Enumerator::Lazy[Stream, void]
