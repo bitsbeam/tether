@@ -29,6 +29,7 @@ module Tether
         @released = ConditionVariable.new
         @idle = ConditionVariable.new
         @handler = nil
+        @ack_handler = nil
         reset
       end
 
@@ -90,6 +91,20 @@ module Tether
         nil
       end
 
+      # Registers the handler that receives every future once it completes, successfully or not, on the
+      # same worker thread as {#on_error}.
+      #
+      # @yieldparam future [PublishFuture] the completed future
+      # @return [void] nothing
+      def on_ack(&handler)
+        @lock.synchronize do
+          orphan
+          @ack_handler = handler
+          work
+        end
+        nil
+      end
+
       private
 
       def reset
@@ -115,7 +130,7 @@ module Tether
       end
 
       def work
-        return unless @handler && !@worker&.alive?
+        return unless (@handler || @ack_handler) && !@worker&.alive?
 
         reports = @reports
         @worker = Thread.new { report(reports) }
@@ -207,7 +222,7 @@ module Tether
           settled = yield
           settled.each { |future| future.complete(outcome) }
           release unless settled.empty?
-          reports = @reports if @handler
+          reports = @reports if @handler || @ack_handler
           settled
         end
         futures.each { |future| reports.push(future) } if reports && !reports.closed?
@@ -218,15 +233,15 @@ module Tether
       def report(reports)
         Thread.current.name = WORKER
         while (future = reports.pop)
-          handler = @handler
-          next unless handler && future.error
-
-          begin
-            handler.call(future)
-          rescue StandardError => e
-            @client.report_handler_error(e)
-          end
+          notify(@ack_handler, future)
+          notify(@handler, future) if future.error
         end
+      end
+
+      def notify(handler, future)
+        handler&.call(future)
+      rescue StandardError => e
+        @client.report_handler_error(e)
       end
     end
   end

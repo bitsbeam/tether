@@ -33,6 +33,7 @@ module Tether
     def pending_publishes: () -> Integer
     def wait_for_publishes: (?timeout: Tether::timeout) -> bool
     def on_publish_error: () { (PublishFuture future) -> void } -> self
+    def on_publish_ack: () { (PublishFuture future) -> void } -> self
     def batch: (?timeout: Tether::timeout) { (PublishBatch batch) -> void } -> PubAck?
     def fast_batch: (?gap: Symbol, ?flow: Integer, ?windows: Integer, ?timeout: Tether::timeout) { (FastBatch batch) -> void } -> PubAck?
     def counter: (String subject, ?stream: String?) -> Counter

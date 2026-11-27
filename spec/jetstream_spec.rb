@@ -1071,6 +1071,33 @@ RSpec.describe Tether::JetStream do
     end
   end
 
+  describe "#on_publish_ack" do
+    let(:completed) { Thread::Queue.new }
+
+    it "calls the block with each acknowledged future" do
+      stream = ingest_stream(js)
+      js.on_publish_ack { |future| completed.push(future.value.sequence) }
+      2.times { js.publish_async("#{stream}.a", "x") }
+
+      expect(take(completed, 2)).to eq([1, 2])
+    end
+
+    it "calls the block with failed futures too" do
+      js.on_publish_ack { |future| completed.push(future.error) }
+      js.publish_async(topic, "x")
+
+      expect(completed.pop(timeout: 2)).to be_a(Tether::JetStream::NoStreamResponseError)
+    end
+
+    it "calls both blocks for a failed future when on_publish_error is set as well" do
+      js.on_publish_ack { |future| completed.push([:ack, future.subject]) }
+      js.on_publish_error { |future| completed.push([:error, future.subject]) }
+      js.publish_async(topic, "x")
+
+      expect(take(completed, 2)).to eq([[:ack, topic], [:error, topic]])
+    end
+  end
+
   describe "#batch" do
     let(:stream) { ingest_stream(js, allow_atomic: true) }
 

@@ -246,6 +246,16 @@ module Tether
       self
     end
 
+    # Registers a block that receives every asynchronous publish once it completes, acknowledged or
+    # failed. It replaces an earlier one and runs on the same worker thread as {#on_publish_error}.
+    #
+    # @yieldparam future [PublishFuture] the completed future: `future.value` returns at once
+    # @return [self] this context
+    def on_publish_ack(&handler)
+      publisher.on_ack(&handler)
+      self
+    end
+
     # Publishes several messages that the server stores all together or not at all. The batch is
     # committed when the block returns and abandoned when it raises.
     #

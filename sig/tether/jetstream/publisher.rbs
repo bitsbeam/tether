@@ -12,6 +12,7 @@ module Tether
       @released: Thread::ConditionVariable
       @idle: Thread::ConditionVariable
       @handler: (^(PublishFuture future) -> void)?
+      @ack_handler: (^(PublishFuture future) -> void)?
       @generation: Integer
       @pending: Hash[String, PublishFuture]
       @counter: Integer
@@ -28,6 +29,7 @@ module Tether
       def pending: () -> Integer
       def wait: (Deadline deadline) -> bool
       def on_error: () { (PublishFuture future) -> void } -> void
+      def on_ack: () { (PublishFuture future) -> void } -> void
 
       private
 
@@ -45,6 +47,7 @@ module Tether
       def fail_all: (Exception error) -> void
       def settle: (Protocol::Msg | Exception outcome) { () -> Array[PublishFuture] } -> void
       def report: (Thread::Queue reports) -> void
+      def notify: ((^(PublishFuture future) -> void)? handler, PublishFuture future) -> void
     end
   end
 end

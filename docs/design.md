@@ -1073,6 +1073,7 @@ future.payload ; future.headers # what was sent, msg_id and expectations include
 js.pending_publishes                    # how many acks are outstanding
 js.wait_for_publishes(timeout: 10)      # => true when all are resolved, false on timeout
 js.on_publish_error { |future| ... }    # a failed future: future.subject, future.error
+js.on_publish_ack { |future| ... }      # every completed future, acknowledged or failed
 ```
 
 All async acks arrive on one resolver subscription and are matched to futures by reply token. At
@@ -1080,8 +1081,9 @@ most `publish_async_max_pending` (4,000) are in flight; beyond that `publish_asy
 to `stall: 0.2` seconds and then raises `TooManyStalledMessagesError` without sending. A future
 that gets no ack within `publish_async_timeout` (off by default) fails with `TimeoutError`.
 `value` and `wait` default to the context's timeout, and a `value` that times out leaves the
-future pending. `on_publish_error` holds one handler, which a later call replaces, and runs it on
-a worker thread of its own.
+future pending. `on_publish_error` and `on_publish_ack` each hold one handler, which a later call
+replaces, and both run on one worker thread of their own; for a failed future the ack handler runs
+first.
 
 An asynchronous publish is never sent twice. When nothing answers it the future fails with
 `NoStreamResponseError` instead of retrying as `publish` does, and when the connection drops,
