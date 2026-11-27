@@ -14,7 +14,7 @@ module Tether
     @lock: Thread::Mutex
     @publisher: Publisher?
 
-    def initialize: (Client client, ?domain: String?, ?api_prefix: String?, ?timeout: Numeric, ?publish_async_max_pending: Integer, ?publish_async_timeout: Numeric?) -> void
+    def initialize: (Client client, ?domain: String?, ?api_prefix: String?, ?timeout: Numeric, ?publish_async_max_pending: Integer, ?publish_async_timeout: Numeric?, ?trace: API::_Trace?) -> void
     def timeout: () -> Numeric
     def create_stream: (?stream_config? config, ?timeout: Tether::timeout, **untyped fields) -> Stream
     def update_stream: (?stream_config? config, ?timeout: Tether::timeout, **untyped fields) -> Stream

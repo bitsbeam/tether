@@ -20,10 +20,13 @@ module Tether
       # @param client [Client] the connection
       # @param prefix [String] the subject prefix, for example `$JS.API`
       # @param timeout [Numeric] the default timeout of a request, in seconds
-      def initialize(client, prefix:, timeout:)
+      # @param trace [#call, nil] called with `(:request, subject, body)` before each request and
+      #   `(:response, subject, msg)` after its reply, on the calling thread
+      def initialize(client, prefix:, timeout:, trace: nil)
         @client = client
         @prefix = prefix
         @timeout = timeout
+        @trace = trace
       end
 
       # Turns what a caller passed for a timeout into a deadline. A deadline comes back as it is, so every
@@ -47,10 +50,13 @@ module Tether
       def request(subject, payload = nil, timeout: nil, level: 0)
         body = payload.is_a?(Hash) ? JSON.generate(payload) : payload
         headers = level.positive? ? { LEVEL_HEADER => level.to_s } : nil
-        reply = @client.request("#{@prefix}.#{subject}", body, headers: headers, timeout: timeout || @timeout)
+        subject = "#{@prefix}.#{subject}"
+        trace(:request, subject, body)
+        reply = @client.request(subject, body, headers: headers, timeout: timeout || @timeout)
+        trace(:response, subject, reply)
         decode(reply.data)
       rescue NoRespondersError
-        raise ServiceUnavailableError, "nothing answered #{@prefix}.#{subject}: JetStream is disabled or has no leader"
+        raise ServiceUnavailableError, "nothing answered #{subject}: JetStream is disabled or has no leader"
       end
 
       # Walks a paged listing.
@@ -83,6 +89,14 @@ module Tether
         response
       rescue JSON::ParserError => e
         raise Error, "the JetStream API returned something that is not JSON: #{e.message}"
+      end
+
+      private
+
+      def trace(event, subject, data)
+        @trace&.call(event, subject, data)
+      rescue StandardError => e
+        @client.report_handler_error(e)
       end
     end
   end

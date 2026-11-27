@@ -70,6 +70,23 @@ RSpec.describe Tether::JetStream do
     it "raises ArgumentError for a prefix with a wildcard" do
       expect { described_class.new(nc, api_prefix: "acme.*") }.to raise_error(ArgumentError, /invalid api_prefix/)
     end
+
+    it "traces each API request and its response" do
+      events = []
+      traced = described_class.new(nc, trace: ->(event, subject, data) { events << [event, subject, data] })
+      traced.account_info
+
+      expect(events).to match([[:request, "$JS.API.INFO", nil],
+                               [:response, "$JS.API.INFO", an_object_having_attributes(data: /"type"/)]])
+    end
+
+    it "reports what a trace raises and completes the call" do
+      errors = record(nc, :error)
+      traced = described_class.new(nc, trace: ->(*) { raise "trace bug" })
+
+      expect(traced.account_info.streams).to be >= 0
+      expect(errors.pop(timeout: 2).last).to have_attributes(message: /trace bug/)
+    end
   end
 
   describe "#create_stream" do

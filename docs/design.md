@@ -921,6 +921,9 @@ info. None of them owns a thread until consumption starts.
 `domain:` selects `$JS.<domain>.API`; `api_prefix:` selects an arbitrary prefix for cross-account
 imports. Every API call takes `timeout:` and defaults to the context's. The context also carries
 the async publish settings (7.4): `publish_async_max_pending:`, `publish_async_timeout:`.
+`trace:` takes a callable that sees every JSON API call, as `(:request, subject, body)` before it is
+sent and `(:response, subject, msg)` when the reply arrives, on the calling thread; what it raises
+goes to `on_error` and the call goes on.
 
 **API levels.** The server advertises its JetStream API level in `INFO` (`nc.server_info.api_level`)
 and honors a `Nats-Required-Api-Level` header on API requests, pull requests, direct gets and batch

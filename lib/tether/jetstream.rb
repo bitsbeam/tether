@@ -20,13 +20,15 @@ module Tether
     # @param timeout [Numeric] the default timeout of every API call, in seconds
     # @param publish_async_max_pending [Integer] asynchronous publishes that may await their acknowledgment
     # @param publish_async_timeout [Numeric, nil] seconds after which an unacknowledged asynchronous publish fails
+    # @param trace [#call, nil] called with `(:request, subject, body)` before each API request and
+    #   `(:response, subject, msg)` after its reply, on the calling thread; what it raises is reported, not raised
     # @raise [ArgumentError] if both a domain and a prefix are given, or either cannot be part of a subject
     def initialize(client, domain: nil, api_prefix: nil, timeout: DEFAULT_TIMEOUT,
-                   publish_async_max_pending: 4000, publish_async_timeout: nil)
+                   publish_async_max_pending: 4000, publish_async_timeout: nil, trace: nil)
       raise ArgumentError, "domain: and api_prefix: cannot be combined" if domain && api_prefix
 
       @client = client
-      @api = API.new(client, prefix: prefix_for(domain, api_prefix), timeout: timeout)
+      @api = API.new(client, prefix: prefix_for(domain, api_prefix), timeout: timeout, trace: trace)
       @publish_async_max_pending = publish_async_max_pending
       @publish_async_timeout = publish_async_timeout
       @lock = Mutex.new

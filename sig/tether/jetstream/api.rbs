@@ -7,11 +7,21 @@ module Tether
       attr_reader client: Client
       attr_reader timeout: Numeric
 
-      def initialize: (Client client, prefix: String, timeout: Numeric) -> void
+      interface _Trace
+        def call: (:request | :response event, String subject, (String | Protocol::Msg)? data) -> void
+      end
+
+      @trace: _Trace?
+
+      def initialize: (Client client, prefix: String, timeout: Numeric, ?trace: _Trace?) -> void
       def deadline: (Tether::timeout timeout) -> Deadline
       def request: (String subject, ?(Hash[String, untyped] | String)? payload, ?timeout: Tether::timeout, ?level: Integer) -> Hash[String, untyped]
       def pages: (String subject, String key, ?Hash[String, untyped] payload, ?timeout: Tether::timeout) -> Enumerator::Lazy[untyped, void]
       def decode: (String data) -> Hash[String, untyped]
+
+      private
+
+      def trace: (:request | :response event, String subject, (String | Protocol::Msg)? data) -> void
     end
   end
 end
