@@ -1205,6 +1205,7 @@ push consumer cannot be created by accident. A push consumer made by another cli
 ```ruby
 batch = consumer.fetch(10, timeout: 5)                  # => Batch, possibly fewer, possibly empty; 30 s default
 batch = consumer.fetch(10, timeout: 5, max_bytes: 1_048_576)
+batch = consumer.fetch(timeout: 5, max_bytes: 1_048_576)  # bounded by bytes alone
 batch = consumer.fetch(10, wait: false)                 # no_wait: whatever is available now
 batch = consumer.fetch(10, wait: false, timeout: 5)     # no_wait with expires: wait only if empty
 consumer.fetch(100, timeout: 5) { |msg| msg.ack }       # block form yields as messages arrive

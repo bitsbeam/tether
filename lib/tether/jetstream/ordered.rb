@@ -87,13 +87,15 @@ module Tether
       # Pulls one bounded batch, continuing after the last message an earlier
       # fetch on this object returned.
       #
-      # @param batch [Integer] the most messages to return
+      # @param batch [Integer, nil] the most messages to return; may be left out when `max_bytes:` bounds the batch
       # @param timeout [Numeric, Deadline, nil] how long to wait for the batch to fill; defaults to 30 seconds
       # @param max_bytes [Integer, nil] end the batch before it exceeds this many bytes
       # @param wait [Boolean] false returns what is available now
       # @yieldparam message [Message] each message, in stream order
       # @return [Batch] the messages, possibly fewer than asked, possibly none
-      def fetch(batch, timeout: nil, max_bytes: nil, wait: true, &block)
+      # @raise [ArgumentError] if neither a batch nor `max_bytes:` is given
+      def fetch(batch = nil, timeout: nil, max_bytes: nil, wait: true, &block)
+        batch ||= max_bytes ? Pull::Buffer::BYTES_BATCH : raise(ArgumentError, "fetch needs a batch or max_bytes:")
         timeout ||= Fetch::DEFAULT_TIMEOUT if wait
         deadline = timeout && Deadline.coerce(timeout)
         @fetching.synchronize do

@@ -116,7 +116,7 @@ module Tether
 
       # Pulls one bounded batch. Finding nothing is not an error.
       #
-      # @param batch [Integer] the most messages to return
+      # @param batch [Integer, nil] the most messages to return; may be left out when `max_bytes:` bounds the batch
       # @param timeout [Numeric, Deadline, nil] how long to wait for the batch to fill; defaults to 30 seconds,
       #   or to not waiting at all with `wait: false`
       # @param max_bytes [Integer, nil] end the batch before it exceeds this many bytes
@@ -128,7 +128,9 @@ module Tether
       # @return [Batch] the messages, possibly fewer than asked, possibly none
       # @raise [PushConsumerError] if this is a push consumer
       # @raise [ConsumerDeletedError, PullError, NoHeartbeatError] if the pull failed and delivered nothing
-      def fetch(batch, timeout: nil, max_bytes: nil, wait: true, heartbeat: nil, **options, &block)
+      # @raise [ArgumentError] if neither a batch nor `max_bytes:` is given
+      def fetch(batch = nil, timeout: nil, max_bytes: nil, wait: true, heartbeat: nil, **options, &block)
+        batch ||= max_bytes ? Pull::Buffer::BYTES_BATCH : raise(ArgumentError, "fetch needs a batch or max_bytes:")
         timeout ||= Fetch::DEFAULT_TIMEOUT if wait
         Fetch.new(self, batch, deadline: timeout && Deadline.coerce(timeout), wait: wait, max_bytes: max_bytes,
                                heartbeat: heartbeat, **options).call(&block)

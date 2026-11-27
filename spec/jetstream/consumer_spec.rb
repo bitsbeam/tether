@@ -265,6 +265,18 @@ RSpec.describe Tether::JetStream::Consumer do
       expect(batch.size).to eq(2)
     end
 
+    it "fills the batch up to max_bytes when no batch is given" do
+      stream
+      5.times { nc.publish("#{name}.a", "x" * 1000) }
+      nc.flush
+
+      expect(durable.fetch(timeout: 2, max_bytes: 2500).size).to eq(2)
+    end
+
+    it "raises ArgumentError when neither a batch nor max_bytes is given" do
+      expect { durable.fetch(timeout: 1) }.to raise_error(ArgumentError, /batch or max_bytes/)
+    end
+
     it "yields each message to a block and returns the batch" do
       store(3)
       yielded = []

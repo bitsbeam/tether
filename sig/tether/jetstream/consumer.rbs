@@ -25,7 +25,7 @@ module Tether
       def unpin: (String | Symbol group, ?timeout: Tether::timeout) -> self
       def step_down: (?timeout: Tether::timeout) -> bool
       def delete: (?timeout: Tether::timeout) -> bool
-      def fetch: (Integer batch, ?timeout: Tether::timeout, ?max_bytes: Integer?, ?wait: bool, ?heartbeat: Numeric?, **untyped options) ?{ (Message message) -> void } -> Batch
+      def fetch: (?Integer? batch, ?timeout: Tether::timeout, ?max_bytes: Integer?, ?wait: bool, ?heartbeat: Numeric?, **untyped options) ?{ (Message message) -> void } -> Batch
       def next: (?timeout: Tether::timeout) -> Message
       def consume: (**untyped options) { (Message message) -> void } -> Pull
       def messages: (**untyped options) -> Pull
