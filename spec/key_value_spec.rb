@@ -918,6 +918,22 @@ RSpec.describe Tether::KeyValue do
       expect(summary(kv.history("color"))).to eq([["color", "blue", :put], ["color", "", :delete]])
     end
 
+    it "leaves tombstones out with ignore_deletes" do
+      kv.put("color", "blue")
+      kv.delete("color")
+      kv.put("color", "green")
+
+      expect(kv.history("color", ignore_deletes: true).map(&:value)).to eq(%w[blue green])
+    end
+
+    it "reads the revisions without their values with meta_only" do
+      kv.put("color", "blue")
+      kv.put("color", "green")
+
+      expect(kv.history("color", meta_only: true).map { |entry| [entry.value, entry.revision] })
+        .to eq([["", 1], ["", 2]])
+    end
+
     it "returns nothing for a key that was never written" do
       expect(kv.history("color")).to eq([])
     end

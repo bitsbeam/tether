@@ -38,7 +38,7 @@ module Tether
     def purge: (String key, ?revision: Integer?, ?ttl: Numeric?, ?timeout: Tether::timeout) -> Integer
     def purge_deletes: (?older_than: Numeric, ?timeout: Tether::timeout) -> Integer
     def keys: (*(String | Array[String]) filters, ?timeout: Tether::timeout) -> Enumerator::Lazy[String, void]
-    def history: (String key, ?timeout: Tether::timeout) -> Array[Entry]
+    def history: (String key, ?ignore_deletes: bool, ?meta_only: bool, ?timeout: Tether::timeout) -> Array[Entry]
     def each: (?timeout: Tether::timeout) { (Entry entry) -> void } -> self
             | (?timeout: Tether::timeout) -> Enumerator[Entry, self]
     def watch: (*(String | Array[String]) keys, **untyped options) ?{ (Entry entry) -> void } -> Watcher

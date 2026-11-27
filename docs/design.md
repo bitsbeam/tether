@@ -1410,6 +1410,7 @@ kv.purge_deletes(older_than: 1800)          # removes tombstones of that age; =>
 kv.keys                                     # lazy Enumerator of live keys
 kv.keys("config.>")                         # with subject filters
 kv.history("region")                        # Array<Entry>, oldest first; [] for a key never written
+kv.history("region", ignore_deletes: true, meta_only: true)  # without tombstones, without values
 kv.each { |entry| ... }                     # current entries; Enumerable
 kv.status                                   # Status: bucket, values, history, ttl, limit_marker_ttl, bytes,
                                             #   compressed?, backing_store, metadata, config, stream_info

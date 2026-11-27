@@ -307,12 +307,15 @@ module Tether
     # Reads the revisions the bucket still holds for a key, tombstones included.
     #
     # @param key [String] the key
+    # @param ignore_deletes [Boolean] leave delete and purge markers out
+    # @param meta_only [Boolean] read the revisions without their values
     # @param timeout [Numeric, Deadline, nil] seconds to wait for each revision, or a deadline for all of them
     # @return [Array<Entry>] the revisions, oldest first; empty when the key was never written or was removed
     # @raise [InvalidKeyError] if the key breaks the rules
-    def history(key, timeout: nil)
+    def history(key, ignore_deletes: false, meta_only: false, timeout: nil)
       entries = []
-      initial([Naming.key!(key)], timeout, include_history: true) { |entry| entries << entry }
+      initial([Naming.key!(key)], timeout, include_history: true, ignore_deletes: ignore_deletes,
+                                           meta_only: meta_only) { |entry| entries << entry }
       entries
     end
 
