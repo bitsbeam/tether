@@ -1317,7 +1317,8 @@ only. An unrecognized status is a warning, so a newer server cannot stop an olde
 ```ruby
 ordered = stream.ordered_consumer(filter_subjects: ["orders.>"], deliver_policy: :all,
                                   start_sequence: nil, start_time: nil, headers_only: false,
-                                  replay_policy: nil, inactive_threshold: 300, name_prefix: nil)
+                                  replay_policy: nil, inactive_threshold: 300, name_prefix: nil,
+                                  max_reset_attempts: nil)   # nil keeps recreating forever
 ordered.consume(on_caught_up: -> { ... }) { |msg| ... }
 ordered.messages.each { |msg| ... }
 ordered.fetch(100)               # continues after the last message an earlier fetch returned
@@ -1329,7 +1330,8 @@ consumer. It tracks the last stream and consumer sequence delivered. A consumer 
 the previous plus one, a missed heartbeat, a deleted consumer, a no-responders status on a pull (how
 a vanished memory consumer is usually noticed first), or a reconnect makes it create a new consumer
 starting at the last stream sequence plus one, with backoff between attempts, and delete the old one
-in the background so recovery does not wait for it. The user sees an uninterrupted ordered stream.
+in the background so recovery does not wait for it. With `max_reset_attempts:`, a loop whose
+recreation has failed that many times in a row ends with the last error. The user sees an uninterrupted ordered stream.
 Nothing exists on the server until `consume`, `messages` or `fetch` is called, and each loop has its
 own server consumer, which it removes when it stops. `on_caught_up:` is called once, when everything
 that existed when the loop's consumer was created has been handed out, which is what a watcher's

@@ -198,10 +198,11 @@ module Tether
               return @ordered.create(after: @stream_sequence, deadline: attempt)
             rescue StreamNotFoundError, ConnectionClosedError => e
               return fail_with(e)
-            rescue Tether::Error
+            rescue Tether::Error => e
               deadline.check!("recreating the ordered consumer on #{@ordered.stream}")
               @retry_at = Deadline.now + BACKOFF.fetch(@attempts, BACKOFF.last)
               @attempts += 1
+              return fail_with(e) if @ordered.max_reset_attempts && @attempts >= @ordered.max_reset_attempts
             end
           end
         end

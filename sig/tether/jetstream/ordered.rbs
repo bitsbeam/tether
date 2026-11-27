@@ -13,6 +13,7 @@ module Tether
 
       attr_reader stream: String
       attr_reader jetstream: JetStream
+      attr_reader max_reset_attempts: Integer?
 
       @prefix: String
       @start: Hash[Symbol, untyped]
@@ -23,7 +24,7 @@ module Tether
       @reader: Consumer?
       @position: Position
 
-      def initialize: (JetStream jetstream, String stream, ?filter_subjects: (Array[String] | String)?, ?deliver_policy: Symbol?, ?start_sequence: Integer?, ?start_time: Time?, ?headers_only: bool, ?replay_policy: Symbol?, ?inactive_threshold: Numeric, ?name_prefix: String?, ?metadata: Hash[String, String]?) -> void
+      def initialize: (JetStream jetstream, String stream, ?filter_subjects: (Array[String] | String)?, ?deliver_policy: Symbol?, ?start_sequence: Integer?, ?start_time: Time?, ?headers_only: bool, ?replay_policy: Symbol?, ?inactive_threshold: Numeric, ?name_prefix: String?, ?metadata: Hash[String, String]?, ?max_reset_attempts: Integer?) -> void
       def consume: (?on_caught_up: (^() -> void)?, **untyped options) { (Message message) -> void } -> Pull
       def messages: (?on_caught_up: (^() -> void)?, **untyped options) -> Pull
       def fetch: (?Integer? batch, ?timeout: Tether::timeout, ?max_bytes: Integer?, ?wait: bool) ?{ (Message message) -> void } -> Batch

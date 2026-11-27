@@ -17,6 +17,12 @@ RSpec.describe Tether::JetStream::Ordered do
     stream.consumer_names.to_a
   end
 
+  describe ".new" do
+    it "raises ArgumentError for max_reset_attempts that is not positive" do
+      expect { stream.ordered_consumer(max_reset_attempts: 0) }.to raise_error(ArgumentError, /max_reset_attempts/)
+    end
+  end
+
   describe "#stream" do
     it "returns the name of the stream read from" do
       expect(ordered.stream).to eq(name)
@@ -144,6 +150,15 @@ RSpec.describe Tether::JetStream::Ordered do
 
         expect(stream_sequences(take(received, 5, timeout: 15))).to eq(sequences(5, from: 6))
       end
+    end
+
+    it "ends with the last error once max_reset_attempts recreations have failed" do
+      limited = js.create_stream(name: name, subjects: ["#{name}.>"], storage: :memory, max_consumers: 1)
+      loop = consume(limited.ordered_consumer(max_reset_attempts: 1), expires: 2)
+      limited.delete_consumer(loop.consumer.name)
+      limited.create_consumer(durable: "blocker")
+
+      expect { loop.wait(timeout: 15) }.to raise_error(Tether::JetStream::APIError, /maximum consumers/i)
     end
 
     it "ends with StreamNotFoundError when the stream is deleted" do

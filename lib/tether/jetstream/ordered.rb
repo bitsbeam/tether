@@ -25,6 +25,9 @@ module Tether
       # @return [JetStream] the context this belongs to
       attr_reader :jetstream
 
+      # @return [Integer, nil] attempts to recreate the server consumer before a loop gives up; nil for no limit
+      attr_reader :max_reset_attempts
+
       # @param jetstream [JetStream] the context
       # @param stream [String] the stream's name
       # @param filter_subjects [Array<String>, String, nil] only messages on subjects matching these filters
@@ -37,11 +40,18 @@ module Tether
       # @param inactive_threshold [Numeric] seconds the server keeps an unused server consumer
       # @param name_prefix [String, nil] the prefix of the server consumers' names; generated when omitted
       # @param metadata [Hash{String => String}, nil] metadata for the server consumers
-      # @raise [ArgumentError] if the start options contradict each other
+      # @param max_reset_attempts [Integer, nil] attempts to recreate the server consumer before a loop ends with
+      #   the last error; nil keeps trying
+      # @raise [ArgumentError] if the start options contradict each other or the attempts are not positive
       def initialize(jetstream, stream, filter_subjects: nil, deliver_policy: nil, start_sequence: nil,
                      start_time: nil, headers_only: false, replay_policy: nil,
-                     inactive_threshold: INACTIVE_THRESHOLD, name_prefix: nil, metadata: nil)
+                     inactive_threshold: INACTIVE_THRESHOLD, name_prefix: nil, metadata: nil, max_reset_attempts: nil)
         raise ArgumentError, "start_sequence: and start_time: cannot be combined" if start_sequence && start_time
+        if max_reset_attempts && !(max_reset_attempts.is_a?(Integer) && max_reset_attempts.positive?)
+          raise ArgumentError, "max_reset_attempts: must be a positive integer, got #{max_reset_attempts.inspect}"
+        end
+
+        @max_reset_attempts = max_reset_attempts
 
         @jetstream = jetstream
         @stream = stream
