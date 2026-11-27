@@ -23,6 +23,7 @@ module Tether
       def info: () -> EndpointInfo
       def stats: () -> EndpointStats
       def reset: () -> void
+      def failed: (Exception error) -> void
       def inspect: () -> String
 
       private

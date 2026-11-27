@@ -89,6 +89,19 @@ module Tether
         nil
       end
 
+      # Counts a refusal of the endpoint's subscription as an error.
+      #
+      # @api private
+      # @param error [Exception] the server's error
+      # @return [void] nothing
+      def failed(error)
+        @lock.synchronize do
+          @errors += 1
+          @last_error = error.message
+        end
+        nil
+      end
+
       # @return [String] the name and where the endpoint listens
       def inspect
         "#<Tether::Service::Endpoint name=#{@name.inspect} subject=#{@subject.inspect} " \

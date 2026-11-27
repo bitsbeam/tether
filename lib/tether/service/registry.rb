@@ -26,13 +26,17 @@ module Tether
       # @param queue [String, false, nil] the default queue group; nil for "q", false for none
       # @param stats_handler [#call, nil] called with each endpoint when stats are built; its result becomes `data`
       # @param on_stop [#call, nil] called once with the stop error, or nil, when the service has stopped
+      # @param on_error [#call, nil] called with the error and the endpoint, or nil for a discovery subject,
+      #   when the server refuses one of the service's subscriptions
       # @return [Service] the running service
       # @raise [ArgumentError] if the name, version or metadata is unusable
       # @raise [InvalidSubjectError] if the queue group is malformed
       # @raise [ConnectionDrainingError, ConnectionClosedError] if the connection is ending
-      def add(name:, version:, description: nil, metadata: {}, queue: nil, stats_handler: nil, on_stop: nil)
+      def add(name:, version:, description: nil, metadata: {}, queue: nil, stats_handler: nil, on_stop: nil,
+              on_error: nil)
         Service.new(@client, name: name, version: version, description: description, metadata: metadata,
-                             queue: queue, prefix: @prefix, stats_handler: stats_handler, on_stop: on_stop).start
+                             queue: queue, prefix: @prefix, stats_handler: stats_handler, on_stop: on_stop,
+                             on_error: on_error).start
       end
 
       # Asks services to announce themselves. Collects replies until the

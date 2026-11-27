@@ -1523,7 +1523,8 @@ services = nc.services                            # a Service::Registry; nc.serv
 service = services.add(name: "calc", version: "1.2.0", description: "arithmetic",
                        metadata: {}, queue: "q",
                        stats_handler: ->(endpoint) { { "cache" => "warm" } },   # becomes `data` in STATS
-                       on_stop: ->(error) { log.info("stopped: #{error.inspect}") })
+                       on_stop: ->(error) { log.info("stopped: #{error.inspect}") },
+                       on_error: ->(error, endpoint) { log.warn(error.message) })
 
 service.endpoint("add") { |request| request.respond((request.data.to_i + 1).to_s) }
 service.endpoint("div", subject: "calc.div", queue: false, metadata: {}) do |request|
@@ -1537,6 +1538,7 @@ math.endpoint("sqrt") { |request| ... }          # subject "math.sqrt"
 service.name ; service.id ; service.version ; service.endpoints
 service.info ; service.stats ; service.reset_stats
 service.on_stop { |error| }                       # error is what stop was given, or nil
+service.on_error { |error, endpoint| }            # the server refused a subscription; endpoint nil for $SRV
 service.stop(error = nil, timeout: nil)           # drains endpoints, then answers no more discovery
 service.stopped?
 
@@ -1550,7 +1552,11 @@ stats. `queue:` on an endpoint or group is a name, `nil` to inherit from the par
 default is `"q"`), or `false` for no queue group, so every instance receives every request. An
 exception in a handler is answered with a 500 error response carrying `Nats-Service-Error` and
 `Nats-Service-Error-Code`, counted, and recorded as the endpoint's last error; if the handler had
-already responded, the error is only counted. A `Service::Request` is a `Msg` with `respond`,
+already responded, the error is only counted. When the server refuses one of the service's
+subscriptions with a permissions violation, the service keeps running, as in nats.go: the refusal
+is counted and recorded as that endpoint's last error, and `on_error` is called with the error and
+the endpoint, or `nil` when a discovery subject was refused. The service learns of the refusal from
+the connection's `on_error`, so its handlers run on the event thread. A `Service::Request` is a `Msg` with `respond`,
 `respond_json`, `respond_error(code, description, data = nil, headers: nil)` and `responded?`.
 
 `nc.services` returns a `Service::Registry`: `add` starts a service on the connection, and `ping`,

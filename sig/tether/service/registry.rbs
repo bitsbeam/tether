@@ -6,7 +6,7 @@ module Tether
       @client: Client
 
       def initialize: (Client client, ?prefix: String) -> void
-      def add: (name: String, version: String, ?description: String?, ?metadata: Hash[untyped, untyped]?, ?queue: queue, ?stats_handler: _StatsHandler?, ?on_stop: _StopHandler?) -> Service
+      def add: (name: String, version: String, ?description: String?, ?metadata: Hash[untyped, untyped]?, ?queue: queue, ?stats_handler: _StatsHandler?, ?on_stop: _StopHandler?, ?on_error: _ErrorHandler?) -> Service
       def ping: (?String? name, ?id: String?, ?max: Integer?, ?stall: Numeric?, ?timeout: timeout) -> Array[Ping]
       def info: (?String? name, ?id: String?, ?max: Integer?, ?stall: Numeric?, ?timeout: timeout) -> Array[Info]
       def stats: (?String? name, ?id: String?, ?max: Integer?, ?stall: Numeric?, ?timeout: timeout) -> Array[Stats]

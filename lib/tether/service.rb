@@ -95,10 +95,12 @@ module Tether
     # @param prefix [String] the discovery prefix
     # @param stats_handler [#call, nil] called with each endpoint when stats are built; its result becomes `data`
     # @param on_stop [#call, nil] called once with the stop error, or nil, when the service has stopped
+    # @param on_error [#call, nil] called with the error and the endpoint, or nil for a discovery subject, when
+    #   the server refuses one of the service's subscriptions
     # @raise [ArgumentError] if the name, version or metadata is unusable
     # @raise [InvalidSubjectError] if the queue group or prefix is malformed
     def initialize(client, name:, version:, description: nil, metadata: {}, queue: nil, prefix: DEFAULT_PREFIX,
-                   stats_handler: nil, on_stop: nil)
+                   stats_handler: nil, on_stop: nil, on_error: nil)
       @client = client
       @name = Rules.name!(name, "service name")
       @version = Rules.version!(version)
@@ -113,6 +115,8 @@ module Tether
       @endpoints = []
       @controls = []
       @stop_handlers = [on_stop].compact
+      @error_handlers = [on_error].compact
+      @refusals = nil
       @stop_error = nil
       @started = now
     end
@@ -123,6 +127,7 @@ module Tether
     # @return [self] this service
     # @raise [Tether::Error] if a control subscription cannot be made; the service is stopped
     def start
+      @refusals = @client.on_error { |error| refused(error) }
       VERBS.each do |verb|
         control_subjects(verb).each do |subject|
           @controls << @client.subscribe(subject) { |msg| answer(verb, msg) }
@@ -132,6 +137,7 @@ module Tether
       self
     rescue StandardError
       @controls.each(&:unsubscribe)
+      @refusals&.cancel
       @state = :stopped
       raise
     end
@@ -199,6 +205,18 @@ module Tether
         @state == :stopped
       end
       notify(handler, @stop_error) if run_now
+      self
+    end
+
+    # Registers a block to call when the server refuses one of the service's subscriptions, as it does
+    # when the user may not subscribe to an endpoint's subject. The service keeps running; the refusal
+    # also counts as an error in the endpoint's stats.
+    #
+    # @yieldparam error [PermissionsViolationError] the server's error
+    # @yieldparam endpoint [Endpoint, nil] the endpoint refused, nil for a discovery subject
+    # @return [self] this service
+    def on_error(&handler)
+      @lock.synchronize { @error_handlers << handler unless @state == :stopped }
       self
     end
 
@@ -312,7 +330,32 @@ module Tether
       e
     end
 
+    def refused(error)
+      subject = error.subscription_subject if error.is_a?(PermissionsViolationError)
+      endpoint, handlers = owner(subject) if subject
+      return unless handlers
+
+      endpoint&.failed(error)
+      handlers.each { |handler| alert(handler, error, endpoint) }
+    end
+
+    def owner(subject)
+      @lock.synchronize do
+        next unless @state == :running
+
+        endpoint = @endpoints.find { |entry| entry.subject == subject }
+        [endpoint, @error_handlers.dup] if endpoint || @controls.any? { |control| control.subject == subject }
+      end
+    end
+
+    def alert(handler, error, endpoint)
+      handler.call(error, endpoint)
+    rescue StandardError => e
+      @client.report_handler_error(e)
+    end
+
     def finish(error)
+      @refusals&.cancel
       handlers = @lock.synchronize do
         @state = :stopped
         @stop_error = error

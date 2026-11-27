@@ -309,6 +309,52 @@ RSpec.describe Tether::Service do
     end
   end
 
+  describe "#on_error" do
+    let(:limited) { Tether.connect(SharedNatsServer.users.uri, user: "limited", password: "wonderland") }
+
+    after { limited.close }
+
+    def refused_service(errors)
+      service = limited.services.add(name: "calc", version: "1.2.0").on_error { |*refusal| errors << refusal }
+      service.endpoint("sum", subject: "denied.sum") { |request| request.respond("0") }
+      service
+    end
+
+    def endpoint_refusal(errors)
+      eventually { (refusal = errors.pop(timeout: 2)) && refusal.last && refusal }
+    end
+
+    it "calls the block with the endpoint whose subscription the server refuses" do
+      errors = Thread::Queue.new
+      service = refused_service(errors)
+
+      expect(endpoint_refusal(errors))
+        .to match([a_kind_of(Tether::PermissionsViolationError), service.endpoints.first])
+    end
+
+    it "calls the block without an endpoint when a discovery subscription is refused" do
+      errors = Thread::Queue.new
+      refused_service(errors)
+
+      expect(errors.pop(timeout: 2)).to match([an_object_having_attributes(subscription_subject: /\A\$SRV\./), nil])
+    end
+
+    it "counts the refusal as an error of the endpoint" do
+      service = refused_service(Thread::Queue.new)
+
+      stats = eventually { service.stats.endpoints.first.errors == 1 && service.stats.endpoints.first }
+      expect(stats.last_error).to match(/Permissions Violation for Subscription to "denied.sum"/)
+    end
+
+    it "keeps the service running" do
+      errors = Thread::Queue.new
+      service = refused_service(errors)
+      endpoint_refusal(errors)
+
+      expect(service).not_to be_stopped
+    end
+  end
+
   describe "#on_stop" do
     it "calls the block once with nil when the service stops" do
       calls = Thread::Queue.new

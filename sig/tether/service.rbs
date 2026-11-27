@@ -13,6 +13,11 @@ module Tether
       def call: (Exception? error) -> void
     end
 
+    # Called when the server refuses one of the service's subscriptions.
+    interface _ErrorHandler
+      def call: (PermissionsViolationError error, Endpoint? endpoint) -> void
+    end
+
     type state = :running | :stopping | :stopped
     type document = Hash[String, untyped]
     type metadata = Hash[String, String]
@@ -45,9 +50,11 @@ module Tether
     @controls: Array[Connection::Subscription]
     @stop_handlers: Array[_StopHandler]
     @stop_error: Exception?
+    @error_handlers: Array[_ErrorHandler]
+    @refusals: Connection::Events::Registration?
     @started: String
 
-    def initialize: (Client client, name: String, version: String, ?description: String?, ?metadata: Hash[untyped, untyped]?, ?queue: queue, ?prefix: String, ?stats_handler: _StatsHandler?, ?on_stop: _StopHandler?) -> void
+    def initialize: (Client client, name: String, version: String, ?description: String?, ?metadata: Hash[untyped, untyped]?, ?queue: queue, ?prefix: String, ?stats_handler: _StatsHandler?, ?on_stop: _StopHandler?, ?on_error: _ErrorHandler?) -> void
     def start: () -> self
     def endpoint: (String name, ?subject: String?, ?queue: queue, ?metadata: Hash[untyped, untyped]?) { (Request request) -> void } -> Endpoint
     def group: (String name, ?queue: queue) -> Group
@@ -56,6 +63,7 @@ module Tether
     def stats: () -> Stats
     def reset_stats: () -> self
     def on_stop: () { (Exception? error) -> void } -> self
+    def on_error: () { (PermissionsViolationError error, Endpoint? endpoint) -> void } -> self
     def stop: (?Exception? error, ?timeout: timeout) -> self
     def stopped?: () -> bool
     def add_endpoint: (Endpoint endpoint) -> Endpoint
@@ -70,6 +78,9 @@ module Tether
     def document: (String verb) -> document
     def drain: (Array[Connection::Subscription] subscriptions, Deadline deadline) -> Tether::Error?
     def attempt: () { () -> void } -> Tether::Error?
+    def refused: (Exception error) -> void
+    def owner: (String subject) -> [Endpoint?, Array[_ErrorHandler]]?
+    def alert: (_ErrorHandler handler, PermissionsViolationError error, Endpoint? endpoint) -> void
     def finish: (Exception? error) -> void
     def notify: (_StopHandler handler, Exception? error) -> void
   end

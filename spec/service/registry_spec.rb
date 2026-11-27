@@ -30,6 +30,16 @@ RSpec.describe Tether::Service::Registry do
       expect(service).not_to be_stopped
     end
 
+    it "calls on_error when the server refuses a subscription of the service" do
+      limited = Tether.connect(SharedNatsServer.users.uri, user: "limited", password: "wonderland")
+      errors = Thread::Queue.new
+      limited.services.add(name: "calc", version: "1.2.0", on_error: ->(error, _endpoint) { errors << error })
+
+      expect(errors.pop(timeout: 2)).to be_a(Tether::PermissionsViolationError)
+    ensure
+      limited&.close
+    end
+
     it "answers PING requests to every service with the exact reference document" do
       service = add(metadata: { "team" => "core" })
 
