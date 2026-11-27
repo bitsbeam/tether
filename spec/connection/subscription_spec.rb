@@ -442,6 +442,54 @@ RSpec.describe Tether::Connection::Subscription do
     end
   end
 
+  describe "#max_pending" do
+    it "returns the limit given to subscribe" do
+      expect(nc.subscribe(topic, max_pending: 7).max_pending).to eq(7)
+    end
+  end
+
+  describe "#max_pending=" do
+    it "drops what arrives beyond the new limit" do
+      subscription = nc.subscribe(topic)
+      subscription.max_pending = 2
+      publish(5)
+
+      expect(subscription.dropped).to eq(3)
+    end
+
+    it "accepts more once the limit is raised" do
+      subscription = nc.subscribe(topic, max_pending: 2)
+      subscription.max_pending = 10
+      publish(5)
+
+      expect(subscription.pending).to eq(5)
+    end
+
+    it "raises ArgumentError for a limit that is not positive" do
+      expect { nc.subscribe(topic).max_pending = 0 }.to raise_error(ArgumentError, /max_pending/)
+    end
+  end
+
+  describe "#max_pending_bytes" do
+    it "returns the limit given to subscribe" do
+      expect(nc.subscribe(topic, max_pending_bytes: 1024).max_pending_bytes).to eq(1024)
+    end
+  end
+
+  describe "#max_pending_bytes=" do
+    it "drops what arrives beyond the new byte limit" do
+      subscription = nc.subscribe(topic)
+      subscription.max_pending_bytes = 1
+      publish(3)
+
+      expect(subscription.dropped).to eq(2)
+    end
+
+    it "raises ArgumentError for a limit that is not positive" do
+      expect { nc.subscribe(topic).max_pending_bytes = -1 }.to raise_error(ArgumentError, /max_pending_bytes/)
+    end
+  end
+
   describe "#closed?" do
     it "returns false for a live subscription" do
       expect(nc.subscribe(topic)).not_to be_closed

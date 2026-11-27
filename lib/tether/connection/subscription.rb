@@ -264,6 +264,30 @@ module Tether
       # @return [Integer] messages dropped because the queue was full
       def dropped = @lock.synchronize { @dropped }
 
+      # @return [Integer] messages that may wait before newer ones are dropped
+      def max_pending = @lock.synchronize { @max_pending }
+
+      # Changes how many messages may wait. Messages already waiting stay, even above the new limit.
+      #
+      # @param limit [Integer] a positive count
+      # @raise [ArgumentError] if the limit is not a positive integer
+      def max_pending=(limit)
+        limit = positive_limit(limit, :max_pending)
+        @lock.synchronize { @max_pending = limit }
+      end
+
+      # @return [Integer] bytes that may wait before newer messages are dropped
+      def max_pending_bytes = @lock.synchronize { @max_pending_bytes }
+
+      # Changes how many bytes may wait. Messages already waiting stay, even above the new limit.
+      #
+      # @param limit [Integer] a positive byte count
+      # @raise [ArgumentError] if the limit is not a positive integer
+      def max_pending_bytes=(limit)
+        limit = positive_limit(limit, :max_pending_bytes)
+        @lock.synchronize { @max_pending_bytes = limit }
+      end
+
       # @return [Boolean] whether the subscription has ended for any reason
       def closed?
         @state == :closed || @messages.closed?
@@ -280,6 +304,12 @@ module Tether
       end
 
       private
+
+      def positive_limit(limit, name)
+        return limit if limit.is_a?(Integer) && limit.positive?
+
+        raise ArgumentError, "#{name}: must be a positive integer, got #{limit.inspect}"
+      end
 
       def admit(msg)
         return :closed if @state == :closed || @messages.closed?

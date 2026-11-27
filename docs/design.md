@@ -518,7 +518,8 @@ A registry entry is anything that responds to `deliver(msg)` and never blocks. T
 
 **`Connection::Subscription`** is what `subscribe` returns. It has a bounded queue and, when given
 a block, a worker thread that calls the block. Limits are `max_pending:` messages (65,536) and
-`max_pending_bytes:` (64 MiB). When either is exceeded the message is dropped, `dropped` is
+`max_pending_bytes:` (64 MiB), readable and writable on the subscription later
+(`sub.max_pending = 1_000`); lowering a limit keeps what already waits. When either is exceeded the message is dropped, `dropped` is
 incremented, and a `SlowConsumerError` event is emitted once per episode, not once per message.
 An episode ends only when the queue has drained below half of its limit, so a subscription that
 stays near full does not flap. A subscription whose `SUB` the server refused with a permissions

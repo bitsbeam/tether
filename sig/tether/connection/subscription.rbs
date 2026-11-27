@@ -51,12 +51,17 @@ module Tether
       def pending_bytes: () -> Integer
       def delivered: () -> Integer
       def dropped: () -> Integer
+      def max_pending: () -> Integer
+      def max_pending=: (Integer limit) -> Integer
+      def max_pending_bytes: () -> Integer
+      def max_pending_bytes=: (Integer limit) -> Integer
       def closed?: () -> bool
       def draining?: () -> bool
       def inspect: () -> String
 
       private
 
+      def positive_limit: (untyped limit, Symbol name) -> Integer
       def admit: (Protocol::Msg msg) -> outcome
       def overflow: () -> (:slow | :dropped)
       def limit: (Integer count) -> bool
