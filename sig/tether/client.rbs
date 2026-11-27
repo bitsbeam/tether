@@ -44,6 +44,7 @@ module Tether
     def reconnecting?: () -> bool
     def draining?: () -> bool
     def closed?: () -> bool
+    def server: () -> Connection::Server?
     def server_info: () -> ServerInfo?
     def max_payload: () -> Integer?
     def servers: () -> Array[Connection::Server]

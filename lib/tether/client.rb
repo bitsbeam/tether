@@ -243,6 +243,10 @@ module Tether
     # @return [Boolean] whether the client is closed; a closed client is never reopened
     def closed? = status == :closed
 
+    # @return [Connection::Server, nil] the server connected to, or the last one while reconnecting or once
+    #   closed; its `url` carries no credentials
+    def server = @connection.server
+
     # @return [ServerInfo, nil] what the connected server announced
     def server_info = @connection.server_info
 

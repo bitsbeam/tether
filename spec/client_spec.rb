@@ -1509,6 +1509,22 @@ RSpec.describe Tether::Client do
     end
   end
 
+  describe "#server" do
+    it "returns the server the client connected to" do
+      expect(nc.server.url).to eq(server.uri)
+    end
+
+    it "returns a URL without the credentials it connected with" do
+      client = connect(SharedNatsServer.users.uri.sub("://", "://alice:wonderland@"))
+
+      expect(client.server.url).not_to include("wonderland")
+    end
+
+    it "returns nil before the client connects" do
+      expect(build.server).to be_nil
+    end
+  end
+
   describe "#server_info" do
     it "returns what the connected server announced" do
       expect(nc.server_info).to be_a(Tether::ServerInfo).and have_attributes(

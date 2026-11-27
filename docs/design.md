@@ -871,6 +871,7 @@ connection lost while requests are waiting releases every one of them with `Disc
 
 ```ruby
 nc.status            # :connected
+nc.server            # the Server connected to, or the last one; server.url carries no credentials
 nc.server_info       # Tether::ServerInfo: id, name, version, host, port, cluster, max_payload,
                      #   headers?, jetstream?, api_level, domain, client_id, client_ip, account, ...
 nc.servers           # the pool: [#<Server url: discovered?: attempts:>]; nc.servers = [...] replaces it
