@@ -75,6 +75,26 @@ module Tether
         @tls
       end
 
+      # @return [Addrinfo, nil] this side of the socket, nil once it is closed
+      def local_address
+        @socket&.local_address
+      rescue IOError, SystemCallError
+        nil
+      end
+
+      # @return [Addrinfo, nil] the server's side of the socket, nil once it is closed
+      def remote_address
+        @socket&.remote_address
+      rescue IOError, SystemCallError
+        nil
+      end
+
+      # @return [TLS::State, nil] what the TLS handshake settled on, nil when the socket is not encrypted
+      def tls_state
+        io = @io
+        TLS::State.of(io) if @tls && io.is_a?(OpenSSL::SSL::SSLSocket)
+      end
+
       # Reads whatever is available, waiting for it when nothing is.
       #
       # @param deadline [Deadline] how long to wait for bytes

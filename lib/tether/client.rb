@@ -250,6 +250,16 @@ module Tether
     # @return [ServerInfo, nil] what the connected server announced
     def server_info = @connection.server_info
 
+    # @return [Addrinfo, nil] this side of the connection, nil while there is none
+    def local_address = @connection.transport&.local_address
+
+    # @return [Addrinfo, nil] the server's side of the connection, nil while there is none
+    def remote_address = @connection.transport&.remote_address
+
+    # @return [Connection::TLS::State, nil] the TLS version, cipher and server certificate of the connection,
+    #   nil when it is not encrypted or there is none
+    def tls_state = @connection.transport&.tls_state
+
     # @return [Integer, nil] the largest headers plus payload the server accepts
     def max_payload = server_info&.max_payload
 

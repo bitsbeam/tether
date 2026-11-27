@@ -1525,6 +1525,41 @@ RSpec.describe Tether::Client do
     end
   end
 
+  describe "#local_address" do
+    it "returns this side of the connection" do
+      expect(nc.local_address).to have_attributes(ip_address: "127.0.0.1", ip_port: a_value > 0)
+    end
+
+    it "returns nil once the client is closed" do
+      expect(connect.close.local_address).to be_nil
+    end
+  end
+
+  describe "#remote_address" do
+    it "returns the server's side of the connection" do
+      expect(nc.remote_address).to have_attributes(ip_address: "127.0.0.1", ip_port: URI(server.uri).port)
+    end
+
+    it "returns nil before the client connects" do
+      expect(build.remote_address).to be_nil
+    end
+  end
+
+  describe "#tls_state" do
+    it "returns the TLS version, cipher and certificate of an encrypted connection" do
+      client = connect(SharedNatsServer.tls.tls_uri, tls: { ca_file: certificates.ca_file })
+
+      expect(client.tls_state).to have_attributes(
+        version: /\ATLSv1\.[23]\z/, cipher: an_instance_of(String),
+        peer_certificate: an_object_having_attributes(to_pem: certificates.server_pem)
+      )
+    end
+
+    it "returns nil for a connection that is not encrypted" do
+      expect(nc.tls_state).to be_nil
+    end
+  end
+
   describe "#server_info" do
     it "returns what the connected server announced" do
       expect(nc.server_info).to be_a(Tether::ServerInfo).and have_attributes(

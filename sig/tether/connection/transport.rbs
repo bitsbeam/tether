@@ -18,6 +18,9 @@ module Tether
       def open: (Deadline deadline) -> self
       def upgrade_to_tls: (OpenSSL::SSL::SSLContext context, String hostname, Deadline deadline) -> self
       def tls?: () -> bool
+      def local_address: () -> Addrinfo?
+      def remote_address: () -> Addrinfo?
+      def tls_state: () -> TLS::State?
       def read: (?Deadline deadline) -> String?
       def write: (String data, ?Deadline deadline) -> Integer
       def close: () -> void

@@ -23,6 +23,9 @@ module Tether
       # @return [Writer] the outbound buffer
       attr_reader :writer
 
+      # @return [Transport, nil] the socket of the current connection, nil while there is none
+      attr_reader :transport
+
       # @return [Protocol::Registry] the live subscriptions
       attr_reader :registry
 

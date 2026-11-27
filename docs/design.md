@@ -874,6 +874,8 @@ nc.status            # :connected
 nc.server            # the Server connected to, or the last one; server.url carries no credentials
 nc.server_info       # Tether::ServerInfo: id, name, version, host, port, cluster, max_payload,
                      #   headers?, jetstream?, api_level, domain, client_id, client_ip, account, ...
+nc.local_address ; nc.remote_address   # Addrinfo of each end of the socket, nil without one
+nc.tls_state         # Connection::TLS::State: version, cipher, peer_certificate(_chain); nil unencrypted
 nc.servers           # the pool: [#<Server url: discovered?: attempts:>]; nc.servers = [...] replaces it
 nc.user_info         # a Hash of who the server says this connection is: account, user, permissions, expiry
 nc.max_payload

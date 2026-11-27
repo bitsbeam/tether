@@ -1,6 +1,16 @@
 module Tether
   module Connection
     module TLS
+      class State < Data
+        attr_reader version: String
+        attr_reader cipher: String?
+        attr_reader peer_certificate: OpenSSL::X509::Certificate?
+        attr_reader peer_certificate_chain: Array[OpenSSL::X509::Certificate]
+
+        def self.new: (version: String, cipher: String?, peer_certificate: OpenSSL::X509::Certificate?, peer_certificate_chain: Array[OpenSSL::X509::Certificate]) -> State
+        def self.of: (OpenSSL::SSL::SSLSocket socket) -> State
+      end
+
       def self.context: (Options::settings settings) -> OpenSSL::SSL::SSLContext
 
       private

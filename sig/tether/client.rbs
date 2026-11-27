@@ -48,6 +48,9 @@ module Tether
     def subscription_count: () -> Integer
     def buffered_bytes: () -> Integer
     def server_info: () -> ServerInfo?
+    def local_address: () -> Addrinfo?
+    def remote_address: () -> Addrinfo?
+    def tls_state: () -> Connection::TLS::State?
     def max_payload: () -> Integer?
     def servers: () -> Array[Connection::Server]
     def servers=: (urls urls) -> void
