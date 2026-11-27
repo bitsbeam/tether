@@ -13,7 +13,7 @@ module Tether
       def create_consumer: (String stream, ?config? config, ?timeout: Tether::timeout, **untyped fields) -> Consumer
       def update_consumer: (String stream, ?config? config, ?timeout: Tether::timeout, **untyped fields) -> Consumer
       def create_or_update_consumer: (String stream, ?config? config, ?timeout: Tether::timeout, **untyped fields) -> Consumer
-      def consumer: (String stream, String name, ?timeout: Tether::timeout) -> Consumer
+      def consumer: (String stream, String name, ?lookup: bool, ?timeout: Tether::timeout) -> Consumer
       def consumer?: (String stream, String name, ?timeout: Tether::timeout) -> bool
       def consumers: (String stream, ?timeout: Tether::timeout) -> Enumerator::Lazy[Consumer, void]
       def consumer_names: (String stream, ?timeout: Tether::timeout) -> Enumerator::Lazy[String, void]
@@ -36,7 +36,7 @@ module Tether
       def create_consumer: (?Consumers::config? config, ?timeout: Tether::timeout, **untyped fields) -> Consumer
       def update_consumer: (?Consumers::config? config, ?timeout: Tether::timeout, **untyped fields) -> Consumer
       def create_or_update_consumer: (?Consumers::config? config, ?timeout: Tether::timeout, **untyped fields) -> Consumer
-      def consumer: (String name, ?timeout: Tether::timeout) -> Consumer
+      def consumer: (String name, ?lookup: bool, ?timeout: Tether::timeout) -> Consumer
       def consumer?: (String name, ?timeout: Tether::timeout) -> bool
       def consumers: (?timeout: Tether::timeout) -> Enumerator::Lazy[Consumer, void]
       def consumer_names: (?timeout: Tether::timeout) -> Enumerator::Lazy[String, void]

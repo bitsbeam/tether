@@ -1180,6 +1180,7 @@ consumer = stream.create_consumer(durable: "billing", ack_policy: :explicit,
 consumer = stream.create_or_update_consumer(durable: "billing", ...)
 consumer = stream.update_consumer(durable: "billing", ...)        # the whole config, not a merge
 consumer = stream.consumer("billing")              # looks up; raises ConsumerNotFoundError
+consumer = stream.consumer("billing", lookup: false)  # bound by name, no round trip
 stream.consumer?("billing")
 consumer = stream.create_consumer(filter_subjects: ["orders.>"])   # no name: ephemeral, name generated
 stream.consumers ; stream.consumer_names           # lazy enumerators
@@ -1193,6 +1194,9 @@ consumer.delete
 ```
 
 `stream.consumer` only ever reads. Anything that creates server state has `create` in its name.
+With `lookup: false` it does not even read: the handle knows the stream and consumer names alone
+until `info` is called, so a pull's `group:` is not checked against the consumer's priority groups,
+its messages take acknowledgments, and a missing consumer surfaces as the error of the first pull.
 
 `durable:` names a consumer that stays until it is deleted. `name:` alone names an ephemeral one,
 which the server removes after its `inactive_threshold` without pulls, and no name at all

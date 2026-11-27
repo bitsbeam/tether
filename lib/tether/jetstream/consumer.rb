@@ -29,10 +29,12 @@ module Tether
 
       # @param jetstream [JetStream] the context
       # @param info [ConsumerInfo] what the server returned for the consumer
-      def initialize(jetstream, info)
+      # @param described [Boolean] false when the info holds the names alone, not what the server returned
+      def initialize(jetstream, info, described: true)
         @jetstream = jetstream
         @api = jetstream.api
         @cached_info = info
+        @described = described
         @name = info.name
         @stream = info.stream
         @subject = "#{@stream}.#{@name}"
@@ -47,6 +49,8 @@ module Tether
       # @raise [ConsumerNotFoundError] if the consumer no longer exists
       def info(timeout: nil)
         @cached_info = ConsumerInfo.from_h(@api.request("CONSUMER.INFO.#{@subject}", timeout: timeout))
+        @described = true
+        @cached_info
       end
 
       # @return [ConsumerConfig] the configuration from the cached info
@@ -85,6 +89,7 @@ module Tether
       def reset(sequence: nil, timeout: nil)
         request = sequence ? { "seq" => sequence } : nil
         @cached_info = ConsumerInfo.from_h(@api.request("CONSUMER.RESET.#{@subject}", request, timeout: timeout))
+        @described = true
         self
       end
 
@@ -193,9 +198,8 @@ module Tether
       # @param pull [Pull, nil] the loop that received it
       # @return [Message] the message
       def wrap(msg, pull: nil)
-        if config.priority_policy == :pinned_client && (id = msg.headers&.[](PullStatus::PIN_ID))
-          self.pin_id = id
-        end
+        id = msg.headers&.[](PullStatus::PIN_ID)
+        self.pin_id = id if id
         Message.new(msg, @api.client, acks: config.ack_policy != :none, pull: pull)
       end
 
@@ -256,11 +260,11 @@ module Tether
 
       def check_group(group)
         groups = config.priority_groups || []
-        if groups.empty?
+        if @described && groups.empty?
           raise ArgumentError, "group: given, but #{@name} has no priority groups" if group
-        elsif group.nil?
+        elsif @described && group.nil?
           raise ArgumentError, "group: is required, #{@name} has priority groups #{groups.join(", ")}"
-        elsif !group.to_s.match?(GROUP)
+        elsif group && !group.to_s.match?(GROUP)
           raise ArgumentError, "invalid priority group #{group.inspect}"
         end
       end

@@ -1708,6 +1708,30 @@ RSpec.describe Tether::JetStream do
     it "raises StreamNotFoundError when the stream does not exist" do
       expect { js.consumer(name, "billing") }.to raise_error(Tether::JetStream::StreamNotFoundError)
     end
+
+    it "binds a handle by name without asking the server when lookup is false" do
+      make(subjects: ["#{name}.>"])
+      js.create_consumer(name, durable: "billing")
+      js.publish("#{name}.a", "one")
+      lookups = collect(nc, "$JS.API.CONSUMER.INFO.>")
+
+      consumer = js.consumer(name, "billing", lookup: false)
+
+      expect(consumer.fetch(1, timeout: 2).map(&:data)).to eq(["one"])
+      expect(lookups).to be_empty
+    end
+
+    it "pulls from a priority group through a handle bound without lookup" do
+      skip "needs JetStream API level 1" if nc.server_info.api_level.to_i < 1
+      make(subjects: ["#{name}.>"])
+      js.create_consumer(name, durable: "billing", priority_policy: :pinned_client, priority_groups: ["jobs"])
+      2.times { js.publish("#{name}.a", "job") }
+      consumer = js.consumer(name, "billing", lookup: false)
+      consumer.fetch(1, group: "jobs", timeout: 2)
+      consumer.unpin("jobs")
+
+      expect { consumer.fetch(1, group: "jobs", timeout: 2) }.to raise_error(Tether::JetStream::PinIdMismatchError)
+    end
   end
 
   describe "#consumer?" do

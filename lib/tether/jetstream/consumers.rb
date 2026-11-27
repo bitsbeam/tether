@@ -47,13 +47,22 @@ module Tether
       #
       # @param stream [String] the stream's name
       # @param name [String] the consumer's name
+      # @param lookup [Boolean] false returns a handle bound by name alone, without asking the server: its
+      #   {Consumer#cached_info} holds only the names until {Consumer#info} is called, so pulls are not
+      #   checked against its priority groups and its messages take acknowledgments
       # @param timeout [Numeric, Deadline, nil] how long to wait
       # @return [Consumer] a handle to the consumer
-      # @raise [ConsumerNotFoundError] if the consumer does not exist
-      # @raise [StreamNotFoundError] if the stream does not exist
-      def consumer(stream, name, timeout: nil)
-        subject = "CONSUMER.INFO.#{check_name(stream)}.#{check_consumer_name(name)}"
-        Consumer.new(self, ConsumerInfo.from_h(@api.request(subject, timeout: timeout)))
+      # @raise [ConsumerNotFoundError] if the consumer does not exist and was looked up
+      # @raise [StreamNotFoundError] if the stream does not exist and was looked up
+      def consumer(stream, name, lookup: true, timeout: nil)
+        stream = check_name(stream)
+        name = check_consumer_name(name)
+        unless lookup
+          return Consumer.new(self, ConsumerInfo.new(stream: stream, name: name, config: { name: name }),
+                              described: false)
+        end
+
+        Consumer.new(self, ConsumerInfo.from_h(@api.request("CONSUMER.INFO.#{stream}.#{name}", timeout: timeout)))
       end
 
       # @param stream [String] the stream's name
@@ -177,11 +186,12 @@ module Tether
       end
 
       # @param name [String] the consumer's name
+      # @param lookup [Boolean] false returns a handle bound by name alone; see {Consumers#consumer}
       # @param timeout [Numeric, Deadline, nil] how long to wait
       # @return [Consumer] a handle to the consumer
-      # @raise [ConsumerNotFoundError] if the consumer does not exist
-      def consumer(name, timeout: nil)
-        @jetstream.consumer(@name, name, timeout: timeout)
+      # @raise [ConsumerNotFoundError] if the consumer does not exist and was looked up
+      def consumer(name, lookup: true, timeout: nil)
+        @jetstream.consumer(@name, name, lookup: lookup, timeout: timeout)
       end
 
       # @param name [String] the consumer's name

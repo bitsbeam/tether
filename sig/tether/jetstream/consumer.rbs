@@ -14,8 +14,9 @@ module Tether
       @subject: String
       @pin_id: String?
       @lock: Thread::Mutex
+      @described: bool
 
-      def initialize: (JetStream jetstream, ConsumerInfo info) -> void
+      def initialize: (JetStream jetstream, ConsumerInfo info, ?described: bool) -> void
       def info: (?timeout: Tether::timeout) -> ConsumerInfo
       def config: () -> ConsumerConfig
       def push?: () -> bool

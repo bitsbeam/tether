@@ -967,6 +967,10 @@ RSpec.describe Tether::JetStream::Stream do
     it "raises ConsumerNotFoundError when the consumer does not exist" do
       expect { stream.consumer("billing") }.to raise_error(Tether::JetStream::ConsumerNotFoundError)
     end
+
+    it "binds a handle by name without asking the server when lookup is false" do
+      expect(stream.consumer("billing", lookup: false)).to have_attributes(name: "billing", stream: stream.name)
+    end
   end
 
   describe "#consumer?" do
