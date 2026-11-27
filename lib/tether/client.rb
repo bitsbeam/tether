@@ -267,6 +267,14 @@ module Tether
     # @return [Stats] a snapshot of the traffic counters
     def stats = @connection.counters.snapshot
 
+    # @return [Integer] the subscriptions this client holds on the server, including the internal ones
+    #   behind requests and JetStream pulls
+    def subscription_count = @connection.registry.size
+
+    # @return [Integer] bytes published but not yet written to the socket, including what is held while
+    #   reconnecting
+    def buffered_bytes = @connection.writer.buffered
+
     # @return [Exception, nil] the most recent asynchronous error
     def last_error = @connection.events.last_error
 

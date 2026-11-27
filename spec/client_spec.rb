@@ -1572,6 +1572,39 @@ RSpec.describe Tether::Client do
     end
   end
 
+  describe "#subscription_count" do
+    it "counts the subscriptions the client holds" do
+      before = nc.subscription_count
+      nc.subscribe(topic) { nil }
+      nc.subscribe("#{topic}.other") { nil }
+
+      expect(nc.subscription_count).to eq(before + 2)
+    end
+
+    it "stops counting a subscription once it is unsubscribed" do
+      before = nc.subscription_count
+      nc.subscribe(topic) { nil }.unsubscribe
+
+      expect(nc.subscription_count).to eq(before)
+    end
+  end
+
+  describe "#buffered_bytes" do
+    it "returns zero once everything has been flushed" do
+      nc.publish(topic, "x" * 100)
+
+      expect(nc.flush.buffered_bytes).to eq(0)
+    end
+
+    it "counts the bytes held during an outage" do
+      client = connect(proxy.uri, reconnect: ClientHelper::FAST_RECONNECT)
+      outage(client)
+      client.publish(topic, "x" * 100)
+
+      expect(client.buffered_bytes).to be > 100
+    end
+  end
+
   describe "#stats" do
     it "counts messages and bytes in both directions" do
       received = collect(nc, topic)

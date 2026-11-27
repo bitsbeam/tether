@@ -878,6 +878,8 @@ nc.servers           # the pool: [#<Server url: discovered?: attempts:>]; nc.ser
 nc.user_info         # a Hash of who the server says this connection is: account, user, permissions, expiry
 nc.max_payload
 nc.stats             # Tether::Stats
+nc.subscription_count # subscriptions held on the server, internal ones included
+nc.buffered_bytes    # bytes published but not yet written, including the reconnect buffer
 nc.rtt               # seconds
 nc.last_error
 nc.flush(timeout: 10)
