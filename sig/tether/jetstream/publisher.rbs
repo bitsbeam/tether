@@ -35,7 +35,7 @@ module Tether
       def orphan: () -> void
       def work: () -> void
       def start: () -> void
-      def register: (String subject, Deadline deadline) -> [PublishFuture, String]
+      def register: (String subject, String? payload, (Protocol::Headers | Hash[untyped, untyped])? headers, Deadline deadline) -> [PublishFuture, String]
       def make_room: (String subject, Deadline deadline) -> void
       def discard: (String token) -> void
       def release: () -> void

@@ -11,17 +11,27 @@ module Tether
       # @return [String] the subject the message was published to
       attr_reader :subject
 
+      # @return [String, nil] the message body, kept so a failed publish can be sent again
+      attr_reader :payload
+
+      # @return [Protocol::Headers, Hash, nil] the headers sent, the message id and expectations included
+      attr_reader :headers
+
       # @api private
       # @return [Float, nil] the monotonic instant the publisher gives up on the acknowledgment
       attr_reader :expires_at
 
       # @api private
       # @param subject [String] the subject the message was published to
+      # @param payload [String, nil] the message body
+      # @param headers [Protocol::Headers, Hash, nil] the headers sent with the message
       # @param generation [Integer] the process the publish was made in
       # @param timeout [Numeric, nil] how long {#value} and {#wait} wait by default
       # @param expires_at [Float, nil] the monotonic instant the publisher gives up on the acknowledgment
-      def initialize(subject, generation:, timeout: nil, expires_at: nil)
+      def initialize(subject, generation:, payload: nil, headers: nil, timeout: nil, expires_at: nil)
         @subject = subject
+        @payload = payload
+        @headers = headers
         @generation = generation
         @timeout = timeout
         @expires_at = expires_at

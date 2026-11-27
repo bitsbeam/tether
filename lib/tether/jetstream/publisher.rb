@@ -42,7 +42,7 @@ module Tether
       # @raise [TooManyStalledMessagesError] if the window stayed full
       def publish(subject, payload, headers: nil, stall: DEFAULT_STALL)
         start
-        future, token = register(subject, Deadline.coerce(stall))
+        future, token = register(subject, payload, headers, Deadline.coerce(stall))
         begin
           @client.publish(subject, payload, reply_to: "#{@prefix}.#{token}", headers: headers)
         rescue StandardError
@@ -133,11 +133,12 @@ module Tether
         end
       end
 
-      def register(subject, deadline)
+      def register(subject, payload, headers, deadline)
         @lock.synchronize do
           make_room(subject, deadline)
           expires_at = @ack_timeout && (Deadline.now + @ack_timeout)
-          future = PublishFuture.new(subject, generation: @generation, timeout: @wait_timeout, expires_at: expires_at)
+          future = PublishFuture.new(subject, generation: @generation, payload: payload, headers: headers,
+                                              timeout: @wait_timeout, expires_at: expires_at)
           token = (@counter += 1).to_s(36)
           @pending[token] = future
           @expiry ||= @client.timer.after(@ack_timeout) { expire } if @ack_timeout

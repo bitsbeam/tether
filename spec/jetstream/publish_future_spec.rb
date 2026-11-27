@@ -132,6 +132,28 @@ RSpec.describe Tether::JetStream::PublishFuture do
     end
   end
 
+  describe "#payload" do
+    it "returns the body that was published" do
+      expect(js.publish_async("#{stream}.a", "one").payload).to eq("one")
+    end
+  end
+
+  describe "#headers" do
+    it "returns the headers sent, the message id included" do
+      future = js.publish_async("#{stream}.a", "one", headers: { "X-Kind" => "test" }, msg_id: "id-1")
+
+      expect([future.headers["X-Kind"], future.headers["Nats-Msg-Id"]]).to eq(%w[test id-1])
+    end
+
+    it "sends the same message again when given back to publish_async" do
+      failed = js.publish_async("#{silent}.a", "one", msg_id: "id-1")
+      resent = js.publish_async("#{stream}.a", failed.payload, headers: failed.headers)
+
+      expect(resent.value(timeout: 2)).to have_attributes(stream: stream, sequence: 1)
+      expect(js.stream(stream).get(1).headers["Nats-Msg-Id"]).to eq("id-1")
+    end
+  end
+
   describe "#inspect" do
     it "shows the subject and whether the outcome is known" do
       expect(js.publish_async("#{silent}.a", "one").inspect).to include("#{silent}.a", "done=false")

@@ -1068,6 +1068,7 @@ future = js.publish_async("orders.created", payload, msg_id: "order-2")
 future.value(timeout: 5)        # => PubAck, or raises what the server answered
 future.wait(timeout: 5)         # => true/false, never raises
 future.done? ; future.error ; future.subject
+future.payload ; future.headers # what was sent, msg_id and expectations included, for a resend
 
 js.pending_publishes                    # how many acks are outstanding
 js.wait_for_publishes(timeout: 10)      # => true when all are resolved, false on timeout
@@ -1085,7 +1086,8 @@ a worker thread of its own.
 An asynchronous publish is never sent twice. When nothing answers it the future fails with
 `NoStreamResponseError` instead of retrying as `publish` does, and when the connection drops,
 in-flight futures fail with `DisconnectedError`: a resend could reorder messages. A caller that
-wants retries supplies `msg_id:` and republishes.
+wants retries supplies `msg_id:` and republishes, with `js.publish_async(future.subject,
+future.payload, headers: future.headers)`, which the server deduplicates by that id.
 
 **Atomic batches**, for streams with `allow_atomic`:
 

@@ -2,6 +2,8 @@ module Tether
   class JetStream
     class PublishFuture
       attr_reader subject: String
+      attr_reader payload: String?
+      attr_reader headers: (Protocol::Headers | Hash[untyped, untyped])?
       attr_reader expires_at: Float?
 
       @generation: Integer
@@ -13,7 +15,7 @@ module Tether
       @ack: PubAck?
       @error: Exception?
 
-      def initialize: (String subject, generation: Integer, ?timeout: Numeric?, ?expires_at: Float?) -> void
+      def initialize: (String subject, generation: Integer, ?payload: String?, ?headers: (Protocol::Headers | Hash[untyped, untyped])?, ?timeout: Numeric?, ?expires_at: Float?) -> void
       def value: (?timeout: Tether::timeout) -> PubAck
       def wait: (?timeout: Tether::timeout) -> bool
       def done?: () -> bool
