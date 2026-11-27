@@ -55,6 +55,24 @@ RSpec.describe Tether::Service do
       expect(endpoint.subject).to eq("calc.div")
     end
 
+    it "drops the requests that arrive beyond max_pending while the handler is busy" do
+      entered = Thread::Queue.new
+      gate = Thread::Queue.new
+      endpoint = add.endpoint("slow", max_pending: 2) do |request|
+        entered << true
+        gate.pop(timeout: 2)
+        request.respond("ok")
+      end
+      nc.publish("slow", "first")
+      entered.pop(timeout: 2)
+      4.times { nc.publish("slow", "more") }
+      nc.flush
+
+      expect(eventually { endpoint.subscription.dropped == 2 }).to be(true)
+    ensure
+      gate&.close
+    end
+
     it "joins the queue group q by default, so one instance answers each request" do
       2.times { add.endpoint("one") { |request| request.respond("ok") } }
 

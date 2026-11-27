@@ -31,10 +31,13 @@ module Tether
       # @param subject [String] the composed subject to serve
       # @param queue_group [String, nil] the queue group to join, nil for a plain subscription
       # @param metadata [Hash] string pairs describing the endpoint
+      # @param max_pending [Integer, nil] requests that may wait; nil for the client's limit
+      # @param max_pending_bytes [Integer, nil] bytes of requests that may wait; nil for the client's limit
       # @yieldparam request [Request] each request, on the endpoint's worker thread
       # @raise [ArgumentError] if the name or metadata is unusable or no block is given
       # @raise [InvalidSubjectError] if the subject is malformed
-      def initialize(service:, name:, subject:, queue_group: nil, metadata: {}, &handler)
+      def initialize(service:, name:, subject:, queue_group: nil, metadata: {}, max_pending: nil,
+                     max_pending_bytes: nil, &handler)
         raise ArgumentError, "endpoint #{name.inspect} needs a block to handle requests" unless handler
 
         @service = service
@@ -43,6 +46,8 @@ module Tether
         @subject = Rules.subject!(subject, "endpoint subject")
         @queue_group = queue_group
         @metadata = Rules.metadata(metadata)
+        @max_pending = max_pending
+        @max_pending_bytes = max_pending_bytes
         @handler = handler
         @lock = Mutex.new
         @subscription = nil
@@ -56,7 +61,8 @@ module Tether
       # @raise [InvalidSubjectError] if the server could not accept the subject
       # @raise [ConnectionDrainingError, ConnectionClosedError] if the connection is ending
       def start
-        @subscription = @client.subscribe(@subject, queue: @queue_group) { |msg| handle(msg) }
+        @subscription = @client.subscribe(@subject, queue: @queue_group, max_pending: @max_pending,
+                                                    max_pending_bytes: @max_pending_bytes) { |msg| handle(msg) }
         self
       end
 

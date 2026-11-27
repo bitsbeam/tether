@@ -1535,7 +1535,8 @@ service = services.add(name: "calc", version: "1.2.0", description: "arithmetic"
                        on_error: ->(error, endpoint) { log.warn(error.message) })
 
 service.endpoint("add") { |request| request.respond((request.data.to_i + 1).to_s) }
-service.endpoint("div", subject: "calc.div", queue: false, metadata: {}) do |request|
+service.endpoint("div", subject: "calc.div", queue: false, metadata: {},
+                 max_pending: 1_000, max_pending_bytes: nil) do |request|   # nil limits use the client's
   next request.respond_error(400, "division by zero") if request.data == "0"
   request.respond_json({ result: 100 / request.data.to_i })
 end

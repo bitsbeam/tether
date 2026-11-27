@@ -29,15 +29,18 @@ module Tether
       # @param subject [String, nil] the subject under the prefix; defaults to the name
       # @param queue [String, false, nil] a queue group, nil to use the group's, false for none
       # @param metadata [Hash] string pairs describing the endpoint
+      # @param max_pending [Integer, nil] requests that may wait before newer ones are dropped; nil for the client's
+      # @param max_pending_bytes [Integer, nil] bytes of requests that may wait; nil for the client's
       # @yieldparam request [Request] each request, on the endpoint's worker thread
       # @return [Endpoint] the endpoint
       # @raise [ArgumentError] if the name or metadata is unusable or no block is given
       # @raise [InvalidSubjectError] if the subject or queue group is malformed or reserved
       # @raise [Error] if the service is stopped
-      def endpoint(name, subject: nil, queue: nil, metadata: {}, &handler)
+      def endpoint(name, subject: nil, queue: nil, metadata: {}, max_pending: nil, max_pending_bytes: nil, &handler)
         @service.add_endpoint(
           Endpoint.new(service: @service, name: name, subject: join(subject || name),
-                       queue_group: Rules.queue(queue, @queue) || nil, metadata: metadata, &handler)
+                       queue_group: Rules.queue(queue, @queue) || nil, metadata: metadata,
+                       max_pending: max_pending, max_pending_bytes: max_pending_bytes, &handler)
         )
       end
 

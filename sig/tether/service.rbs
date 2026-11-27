@@ -56,7 +56,7 @@ module Tether
 
     def initialize: (Client client, name: String, version: String, ?description: String?, ?metadata: Hash[untyped, untyped]?, ?queue: queue, ?prefix: String, ?stats_handler: _StatsHandler?, ?on_stop: _StopHandler?, ?on_error: _ErrorHandler?) -> void
     def start: () -> self
-    def endpoint: (String name, ?subject: String?, ?queue: queue, ?metadata: Hash[untyped, untyped]?) { (Request request) -> void } -> Endpoint
+    def endpoint: (String name, ?subject: String?, ?queue: queue, ?metadata: Hash[untyped, untyped]?, ?max_pending: Integer?, ?max_pending_bytes: Integer?) { (Request request) -> void } -> Endpoint
     def group: (String name, ?queue: queue) -> Group
     def endpoints: () -> Array[Endpoint]
     def info: () -> Info

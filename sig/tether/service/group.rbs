@@ -8,7 +8,7 @@ module Tether
 
       def initialize: (Service service, prefix: String, queue: String | false) -> void
       def queue_group: () -> String?
-      def endpoint: (String name, ?subject: String?, ?queue: queue, ?metadata: Hash[untyped, untyped]?) { (Request request) -> void } -> Endpoint
+      def endpoint: (String name, ?subject: String?, ?queue: queue, ?metadata: Hash[untyped, untyped]?, ?max_pending: Integer?, ?max_pending_bytes: Integer?) { (Request request) -> void } -> Endpoint
       def group: (String name, ?queue: queue) -> Group
       def inspect: () -> String
 

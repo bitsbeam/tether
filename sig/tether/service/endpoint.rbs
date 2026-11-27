@@ -12,13 +12,15 @@ module Tether
       @service: Service
       @client: Client
       @handler: ^(Request request) -> void
+      @max_pending: Integer?
+      @max_pending_bytes: Integer?
       @lock: Thread::Mutex
       @requests: Integer
       @errors: Integer
       @processing_time: Integer
       @last_error: String
 
-      def initialize: (service: Service, name: String, subject: String, ?queue_group: String?, ?metadata: Hash[untyped, untyped]?) { (Request request) -> void } -> void
+      def initialize: (service: Service, name: String, subject: String, ?queue_group: String?, ?metadata: Hash[untyped, untyped]?, ?max_pending: Integer?, ?max_pending_bytes: Integer?) { (Request request) -> void } -> void
       def start: () -> self
       def info: () -> EndpointInfo
       def stats: () -> EndpointStats
