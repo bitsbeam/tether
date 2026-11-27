@@ -189,7 +189,9 @@ module Tether
       end
 
       def request_headers
-        (@settings[:headers] || {}).to_h do |name, value|
+        headers = @settings[:headers]
+        headers = headers.call if headers.respond_to?(:call)
+        (headers || {}).to_h do |name, value|
           name = name.to_s
           value = value.to_s
           if name.empty? || name.match?(/[^!#$%&'*+\-.^_`|~0-9A-Za-z]/) || value.match?(/[\r\n\0]/)

@@ -124,6 +124,16 @@ RSpec.describe Tether::Connection::WebSocket do
       expect(eventually { @plain.log[%r{203\.0\.113\.7/\S+ - wid:\d+}] }).to be_a(String)
     end
 
+    it "asks a headers callable again on every connect" do
+      calls = Thread::Queue.new
+      client = connect(reconnect: { wait: 0.05 },
+                       websocket: { headers: -> { { "X-Forwarded-For" => "203.0.113.#{calls.push(1).size}" } } })
+      client.force_reconnect
+      eventually { client.connected? && client.stats.reconnects == 1 }
+
+      expect(eventually { @plain.log[%r{203\.0\.113\.2/\S+ - wid:\d+}] }).to be_a(String)
+    end
+
     it "connects without masking when it is requested and the server agrees" do
       client = connect(websocket: { headers: { "Nats-No-Masking" => "true" } })
 

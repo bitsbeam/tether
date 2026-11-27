@@ -645,7 +645,8 @@ implementations.
   `compression: true` requests `permessage-deflate` and requires the server to agree to no context
   takeover in both directions; `path:` overrides the URL path, for servers behind a proxy;
   `headers:` adds headers to the upgrade request, which is also how cookie-based authentication is
-  supplied. NATS-level TLS negotiation does not apply: TLS on a WebSocket connection is chosen by
+  supplied; given a callable instead of a Hash, it is called on every connect, so a short-lived
+  token can be fetched fresh. NATS-level TLS negotiation does not apply: TLS on a WebSocket connection is chosen by
   the `wss` scheme alone.
 
 **TLS** options live under `tls:`:
