@@ -22,6 +22,8 @@ module Tether
     attr_reader stream: JetStream::Stream
 
     def self.create: (JetStream jetstream, bucket: _ToS, ?timeout: Tether::timeout, **untyped options) -> ObjectStore
+    def self.update: (JetStream jetstream, bucket: _ToS, ?timeout: Tether::timeout, **untyped options) -> ObjectStore
+    def self.create_or_update: (JetStream jetstream, bucket: _ToS, ?timeout: Tether::timeout, **untyped options) -> ObjectStore
     def self.bind: (JetStream jetstream, _ToS bucket, ?timeout: Tether::timeout) -> ObjectStore
     def self.delete: (JetStream jetstream, _ToS bucket, ?timeout: Tether::timeout) -> bool
     def self.names: (JetStream jetstream, ?timeout: Tether::timeout) -> Enumerator::Lazy[String, void]

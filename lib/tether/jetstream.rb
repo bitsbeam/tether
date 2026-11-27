@@ -368,6 +368,29 @@ module Tether
                                placement: placement, metadata: metadata, timeout: timeout)
     end
 
+    # Replaces the options of an Object Store bucket. Options that are not given return to their defaults.
+    #
+    # @param bucket [String] the bucket's name
+    # @param timeout [Numeric, Deadline, nil] how long to wait
+    # @param options [Hash{Symbol => Object}] the options of {#create_object_store}
+    # @return [ObjectStore] the bucket
+    # @raise [ObjectStore::BucketNotFoundError] if the bucket does not exist
+    # @raise [ObjectStore::InvalidBucketNameError] if the name breaks the rules
+    def update_object_store(bucket:, timeout: nil, **options)
+      ObjectStore.update(self, bucket: bucket, timeout: timeout, **options)
+    end
+
+    # Replaces the options of an Object Store bucket, or creates it when it does not exist.
+    #
+    # @param bucket [String] the bucket's name
+    # @param timeout [Numeric, Deadline, nil] how long both attempts together may take
+    # @param options [Hash{Symbol => Object}] the options of {#create_object_store}
+    # @return [ObjectStore] the bucket
+    # @raise [ObjectStore::InvalidBucketNameError] if the name breaks the rules
+    def create_or_update_object_store(bucket:, timeout: nil, **options)
+      ObjectStore.create_or_update(self, bucket: bucket, timeout: timeout, **options)
+    end
+
     # Binds to an existing Object Store bucket.
     #
     # @param bucket [String] the bucket's name

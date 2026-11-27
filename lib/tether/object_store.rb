@@ -39,6 +39,36 @@ module Tether
         raise BucketExistsError, "bucket #{bucket} exists with another configuration"
       end
 
+      # Replaces the options of an existing bucket. Options that are not given return to their defaults.
+      #
+      # @api private
+      # @param jetstream [JetStream] the context
+      # @param bucket [String] the bucket's name
+      # @param timeout [Numeric, Deadline, nil] how long to wait
+      # @param options [Hash{Symbol => Object}] see {JetStream#create_object_store}
+      # @return [ObjectStore] the bucket
+      # @raise [BucketNotFoundError] if the bucket does not exist
+      def update(jetstream, bucket:, timeout: nil, **options)
+        new(jetstream, jetstream.update_stream(stream_config(check_bucket(bucket), **options), timeout: timeout))
+      rescue JetStream::StreamNotFoundError
+        raise BucketNotFoundError, "bucket #{bucket} does not exist"
+      end
+
+      # Replaces the options of a bucket, or creates it when it does not exist.
+      #
+      # @api private
+      # @param jetstream [JetStream] the context
+      # @param bucket [String] the bucket's name
+      # @param timeout [Numeric, Deadline, nil] how long both attempts together may take
+      # @param options [Hash{Symbol => Object}] see {JetStream#create_object_store}
+      # @return [ObjectStore] the bucket
+      def create_or_update(jetstream, bucket:, timeout: nil, **options)
+        deadline = jetstream.api.deadline(timeout)
+        update(jetstream, bucket: bucket, timeout: deadline, **options)
+      rescue BucketNotFoundError
+        create(jetstream, bucket: bucket, timeout: deadline, **options)
+      end
+
       # Binds to an existing bucket.
       #
       # @api private

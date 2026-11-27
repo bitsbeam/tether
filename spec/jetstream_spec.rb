@@ -1962,6 +1962,51 @@ RSpec.describe Tether::JetStream do
     end
   end
 
+  describe "#update_object_store" do
+    it "replaces the options of the bucket" do
+      made << "OBJ_#{name}"
+      js.create_object_store(bucket: name, storage: :memory, description: "before")
+
+      expect(js.update_object_store(bucket: name, storage: :memory, max_bytes: 1_000_000).status)
+        .to have_attributes(max_bytes: 1_000_000, description: nil)
+    end
+
+    it "keeps the objects of the bucket" do
+      made << "OBJ_#{name}"
+      js.create_object_store(bucket: name, storage: :memory).put("object", "hello world")
+
+      expect(js.update_object_store(bucket: name, storage: :memory, ttl: 3600).get("object").read)
+        .to eq("hello world")
+    end
+
+    it "raises BucketNotFoundError when the bucket does not exist" do
+      expect { js.update_object_store(bucket: name, storage: :memory) }
+        .to raise_error(Tether::ObjectStore::BucketNotFoundError, /#{name}/)
+    end
+
+    it "raises InvalidBucketNameError for a name that cannot be a bucket" do
+      expect { js.update_object_store(bucket: "no spaces") }
+        .to raise_error(Tether::ObjectStore::InvalidBucketNameError)
+    end
+  end
+
+  describe "#create_or_update_object_store" do
+    it "creates the bucket when it does not exist" do
+      made << "OBJ_#{name}"
+
+      expect(js.create_or_update_object_store(bucket: name, storage: :memory, description: "new").status)
+        .to have_attributes(description: "new")
+    end
+
+    it "updates the bucket when it exists" do
+      made << "OBJ_#{name}"
+      js.create_object_store(bucket: name, storage: :memory)
+
+      expect(js.create_or_update_object_store(bucket: name, storage: :memory, max_bytes: 2_000_000).status)
+        .to have_attributes(max_bytes: 2_000_000)
+    end
+  end
+
   describe "#object_store" do
     it "binds to an existing bucket" do
       made << "OBJ_#{name}"

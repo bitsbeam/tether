@@ -1467,6 +1467,8 @@ store = js.create_object_store(bucket: "assets", ttl: nil, max_bytes: nil, stora
                                replicas: 1, compression: false, description: nil,
                                placement: nil, metadata: nil)
 store = js.object_store("assets")                                # raises ObjectStore::BucketNotFoundError
+store = js.update_object_store(bucket: "assets", max_bytes: 10_000_000) # options not given return to their defaults
+store = js.create_or_update_object_store(bucket: "assets", ttl: 86_400)
 js.object_store_names ; js.object_stores ; js.delete_object_store("assets")
 store.name ; store.stream
 

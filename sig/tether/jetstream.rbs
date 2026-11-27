@@ -44,6 +44,8 @@ module Tether
     def key_value_names: (?timeout: Tether::timeout) -> Enumerator::Lazy[String, void]
     def key_values: (?timeout: Tether::timeout) -> Enumerator::Lazy[KeyValue, void]
     def create_object_store: (bucket: _ToS, ?description: String?, ?ttl: Numeric?, ?max_bytes: Integer?, ?storage: Symbol, ?replicas: Integer, ?compression: bool, ?placement: (Placement | Hash[Symbol, untyped])?, ?metadata: Hash[String, String]?, ?timeout: Tether::timeout) -> ObjectStore
+    def update_object_store: (bucket: _ToS, ?timeout: Tether::timeout, **untyped options) -> ObjectStore
+    def create_or_update_object_store: (bucket: _ToS, ?timeout: Tether::timeout, **untyped options) -> ObjectStore
     def object_store: (_ToS bucket, ?timeout: Tether::timeout) -> ObjectStore
     def delete_object_store: (_ToS bucket, ?timeout: Tether::timeout) -> bool
     def object_store_names: (?timeout: Tether::timeout) -> Enumerator::Lazy[String, void]
