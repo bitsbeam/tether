@@ -22,8 +22,11 @@ module Tether
         # @param max_messages [Integer] the batch of a pull and, without a byte budget, the limit
         # @param max_bytes [Integer, nil] a byte budget, which switches the accounting to bytes
         # @param threshold [Integer, nil] pull again when the outstanding count falls below this
-        def initialize(max_messages:, max_bytes: nil, threshold: nil)
+        # @param stop_after [Integer, nil] hand out this many messages in all, then drain
+        def initialize(max_messages:, max_bytes: nil, threshold: nil, stop_after: nil)
           @bytes = !max_bytes.nil?
+          @stop_after = stop_after
+          @taken = @requested = 0
           @batch = max_messages
           @limit = max_bytes || max_messages
           @threshold = threshold || (@limit / 2.0).ceil
@@ -46,6 +49,7 @@ module Tether
             next if @state == :stopped
 
             @messages << msg
+            @requested = @messages.size if @messages.size > @requested
             @buffered += cost(msg)
             @pending = @buffered if @buffered > @pending
             @changed.signal
@@ -80,6 +84,7 @@ module Tether
           @lock.synchronize do
             owed = @bytes ? bytes : messages
             @pending = [@pending - owed, @buffered].max if owed.positive?
+            @requested = [@requested - messages, @messages.size].max if messages.positive?
             next nil unless @state == :running && @pending < @threshold
             next :stalled if too_large && @bytes && @full && @pending.zero?
 
@@ -116,9 +121,18 @@ module Tether
             next nil unless @state == :running && @pending < @threshold
 
             owed = @limit - @pending
+            batch = budget(@bytes ? @batch : owed)
+            next nil unless batch.positive?
+
             @full = @pending.zero?
-            @pending = @limit
-            @bytes ? { batch: @batch, max_bytes: owed } : { batch: owed }
+            @requested += batch
+            if @bytes
+              @pending = @limit
+              { batch: batch, max_bytes: owed }
+            else
+              @pending += batch
+              { batch: batch }
+            end
           end
         end
 
@@ -126,7 +140,10 @@ module Tether
         #
         # @return [void] nothing
         def reset
-          @lock.synchronize { @pending = @buffered }
+          @lock.synchronize do
+            @pending = @buffered
+            @requested = @messages.size
+          end
           nil
         end
 
@@ -135,7 +152,10 @@ module Tether
         # @param messages [Integer] how many more the server was asked for
         # @return [void] nothing
         def add(messages)
-          @lock.synchronize { @pending += messages unless @bytes }
+          @lock.synchronize do
+            @pending += messages unless @bytes
+            @requested += messages
+          end
           nil
         end
 
@@ -145,7 +165,7 @@ module Tether
         def clear
           @lock.synchronize do
             @messages.clear
-            @pending = @buffered = 0
+            @pending = @buffered = @requested = 0
           end
           nil
         end
@@ -220,7 +240,21 @@ module Tether
           spent = cost(msg)
           @buffered -= spent
           @pending = [@pending - spent, @buffered].max
+          @requested = [@requested - 1, @messages.size].max
+          spend
           msg
+        end
+
+        def budget(batch)
+          @stop_after ? [batch, @stop_after - @taken - @requested].min : batch
+        end
+
+        def spend
+          @taken += 1
+          return unless @stop_after && @taken >= @stop_after && @state == :running
+
+          @state = :draining
+          @changed.broadcast
         end
 
         def cost(msg)

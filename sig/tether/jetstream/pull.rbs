@@ -34,7 +34,7 @@ module Tether
       @monitor: Connection::Timer::Entry?
       @last_activity: Float
 
-      def initialize: (Consumer consumer, ?handler? handler, ?max_messages: Integer?, ?max_bytes: Integer?, ?expires: Numeric, ?heartbeat: Numeric?, ?threshold: Integer?, ?concurrency: Integer, ?on_error: error_handler?, **untyped options) -> void
+      def initialize: (Consumer consumer, ?handler? handler, ?max_messages: Integer?, ?max_bytes: Integer?, ?expires: Numeric, ?heartbeat: Numeric?, ?threshold: Integer?, ?concurrency: Integer, ?on_error: error_handler?, ?stop_after: Integer?, **untyped options) -> void
       def on_error: () { (Exception error) -> void } -> self
       def next: (?timeout: Tether::timeout) -> Message
       def each: () { (Message message) -> void } -> self
@@ -50,6 +50,7 @@ module Tether
 
       def idle: (Integer? epoch) -> void
       def validate: (**Integer? counts) -> void
+      def buffer: (Integer? max_messages, Integer? max_bytes, Integer? threshold, Integer? stop_after) -> Buffer
       def start: () -> void
       def started: () -> void
       def open_session: () -> void

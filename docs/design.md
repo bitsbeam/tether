@@ -1269,7 +1269,8 @@ for the difference whenever the outstanding count falls below `threshold` (half 
 pending counts corrected from the `Nats-Pending-Messages` and `Nats-Pending-Bytes` headers of
 terminating statuses; a heartbeat monitor; and a fresh pull after a reconnect. `max_bytes:`
 switches the accounting to bytes, with a message count of 1,000,000 unless `max_messages:` is given
-too. `group:`, `min_pending:`, `min_ack_pending:` and `priority:` pass
+too. `stop_after:` ends the loop once that many messages have been handed out, and caps every pull
+at what is left of the count, so the server is never asked for more. `group:`, `min_pending:`, `min_ack_pending:` and `priority:` pass
 through for priority groups, and a pin id from the server is remembered and sent with subsequent
 pulls until a pin mismatch clears it.
 

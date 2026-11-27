@@ -431,6 +431,33 @@ RSpec.describe Tether::JetStream::Consumer do
       expect(data_of(take(received, 3000))).to eq(expected(3000))
     end
 
+    it "ends the loop after stop_after messages" do
+      store(10)
+
+      consume(durable, stop_after: 3).wait(timeout: 5)
+
+      expect(data_of(take(received, 3))).to eq(expected(3))
+      expect(received).to be_empty
+    end
+
+    it "asks the server for no more than stop_after messages" do
+      store(10)
+      consumer = durable
+
+      consume(consumer, max_messages: 100, stop_after: 3).wait(timeout: 5)
+
+      expect(consumer.info.delivered.consumer_sequence).to eq(3)
+    end
+
+    it "asks for no more than stop_after messages within a byte budget" do
+      store(10)
+      consumer = durable
+
+      consume(consumer, max_bytes: 100_000, stop_after: 4).wait(timeout: 5)
+
+      expect(consumer.info.delivered.consumer_sequence).to eq(4)
+    end
+
     it "keeps pulling within a byte budget" do
       stream
       40.times { |index| nc.publish("#{name}.a", "#{index}:#{"x" * 500}") }
@@ -593,6 +620,12 @@ RSpec.describe Tether::JetStream::Consumer do
       iterator = durable.messages
 
       expect(Array.new(3) { iterator.next(timeout: 2).data }).to eq(expected(3))
+    end
+
+    it "ends iteration after stop_after messages" do
+      store(5)
+
+      expect(durable.messages(stop_after: 2).each.map(&:data)).to eq(expected(2))
     end
 
     it "starts no worker thread" do

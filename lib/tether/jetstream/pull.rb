@@ -29,21 +29,23 @@ module Tether
       # @param threshold [Integer, nil] pull again when fewer messages, or bytes, than this are outstanding
       # @param concurrency [Integer] worker threads calling the handler
       # @param on_error [#call, nil] receives warnings and the error that ends the loop
+      # @param stop_after [Integer, nil] end the loop once this many messages have been handed out; pulls
+      #   never ask for more
       # @param options [Hash{Symbol => Object}] priority group fields: `group:`, `min_pending:`,
       #   `min_ack_pending:`, `priority:`
       # @raise [PushConsumerError] if the consumer is a push consumer
       # @raise [ArgumentError] if an option cannot be used
       def initialize(consumer, handler = nil, max_messages: nil, max_bytes: nil, expires: DEFAULT_EXPIRES,
-                     heartbeat: nil, threshold: nil, concurrency: 1, on_error: nil, **options)
+                     heartbeat: nil, threshold: nil, concurrency: 1, on_error: nil, stop_after: nil, **options)
         @consumer = consumer
         @client = consumer.jetstream.client
         @handler = handler
         @expires = expires
         @heartbeat = heartbeat || (expires / 2.0).clamp(HEARTBEAT_RANGE.begin, HEARTBEAT_RANGE.end)
         @options = options
-        validate(max_messages: max_messages, max_bytes: max_bytes, threshold: threshold, concurrency: concurrency)
-        @buffer = Buffer.new(max_messages: max_messages || (max_bytes ? Buffer::BYTES_BATCH : DEFAULT_MAX_MESSAGES),
-                             max_bytes: max_bytes, threshold: threshold)
+        validate(max_messages: max_messages, max_bytes: max_bytes, threshold: threshold, concurrency: concurrency,
+                 stop_after: stop_after)
+        @buffer = buffer(max_messages, max_bytes, threshold, stop_after)
         @error_handlers = [on_error].compact
         @lock = Mutex.new
         @ended = ConditionVariable.new
@@ -172,6 +174,11 @@ module Tether
         raise ArgumentError, "heartbeat: may be at most half of expires:" if @heartbeat * 2 > @expires
 
         counts.each { |name, value| raise ArgumentError, "#{name}: must be at least 1" if value && value < 1 }
+      end
+
+      def buffer(max_messages, max_bytes, threshold, stop_after)
+        Buffer.new(max_messages: max_messages || (max_bytes ? Buffer::BYTES_BATCH : DEFAULT_MAX_MESSAGES),
+                   max_bytes: max_bytes, threshold: threshold, stop_after: stop_after)
       end
 
       def start
