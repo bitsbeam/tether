@@ -82,6 +82,12 @@ RSpec.describe Tether::JetStream do
       expect(js.stream(name).config).to have_attributes(subjects: ["#{name}.>"], storage: :memory, max_age: 3600)
     end
 
+    it "sources a stream of another domain through that domain's API" do
+      stream = js.create_stream(name: name, storage: :memory, sources: [{ name: "ORIGIN", domain: "hub" }])
+
+      expect(stream.config.sources.first.external.api).to eq("$JS.hub.API")
+    end
+
     it "creates a stream from a StreamConfig" do
       config = Tether::JetStream::StreamConfig.new(name: name, storage: :memory, retention: :work_queue)
 

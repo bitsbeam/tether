@@ -37,6 +37,20 @@ module Tether
       field :subject_transforms, [SubjectTransform]
       field :external, ExternalStream
       field :consumer, :object
+
+      # @param domain [String, nil] the JetStream domain the stream lives in, which sets `external` to
+      #   that domain's API; it is not sent itself
+      # @param raw [Hash{String => Object}, nil] the hash this object was decoded from
+      # @param values [Hash{Symbol => Object}] field values by Ruby name
+      # @raise [ArgumentError] if both a domain and `external:` are given, or a keyword is not a field
+      def initialize(domain: nil, raw: nil, **values)
+        if domain
+          raise ArgumentError, "domain: and external: cannot be combined" if values[:external]
+
+          values[:external] = { api: "$JS.#{domain}.API" }
+        end
+        super(raw: raw, **values)
+      end
     end
 
     # Defaults and caps a stream applies to its consumers.

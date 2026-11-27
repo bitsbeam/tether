@@ -174,3 +174,17 @@ RSpec.describe Tether::JetStream::StreamConfig do
     end
   end
 end
+
+RSpec.describe Tether::JetStream::StreamSource do
+  describe ".new" do
+    it "points external at the API of the given domain" do
+      expect(described_class.new(name: "ORDERS", domain: "hub").to_h)
+        .to eq("name" => "ORDERS", "external" => { "api" => "$JS.hub.API" })
+    end
+
+    it "raises ArgumentError when both a domain and external are given" do
+      expect { described_class.new(name: "ORDERS", domain: "hub", external: { api: "$JS.x.API" }) }
+        .to raise_error(ArgumentError, /domain: and external:/)
+    end
+  end
+end

@@ -971,6 +971,10 @@ Methods that take a config accept keywords directly, so the class rarely needs n
 js.create_stream(name: "ORDERS", subjects: ["orders.>"], max_age: 86_400, replicas: 3)
 ```
 
+A mirror or source in another JetStream domain takes `domain:`, which `StreamSource` turns into
+`external: { api: "$JS.<domain>.API" }` and does not send itself:
+`sources: [{ name: "ORDERS", domain: "hub" }]`.
+
 ### 7.3 Streams
 
 ```ruby

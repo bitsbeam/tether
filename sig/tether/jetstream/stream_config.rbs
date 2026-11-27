@@ -33,6 +33,8 @@ module Tether
       def subject_transforms: () -> Array[SubjectTransform]?
       def external: () -> ExternalStream?
       def consumer: () -> Hash[String, untyped]?
+
+      def initialize: (?domain: String?, ?raw: Hash[String, untyped]?, **untyped values) -> void
     end
 
     class ConsumerLimits < Schema
