@@ -201,8 +201,8 @@ module Tether
       # @param error [Exception] an `-ERR` or a protocol violation
       # @return [void] nothing
       def error_received(error)
-        if error.is_a?(PermissionsViolationError) && (match = error.message.match(/subscription to "([^"]+)"/i))
-          @registry.to_a.each { |entry| entry.fail(error) if entry.subject == match[1] && entry.respond_to?(:fail) }
+        if error.is_a?(PermissionsViolationError) && (subject = error.subscription_subject)
+          @registry.to_a.each { |entry| entry.fail(error) if entry.subject == subject && entry.respond_to?(:fail) }
         end
         @events.error(error)
         nil

@@ -172,3 +172,22 @@ RSpec.describe Tether::ServerError do
     end
   end
 end
+
+RSpec.describe Tether::PermissionsViolationError do
+  describe "#subscription_subject" do
+    it "returns the subject of a refused subscription" do
+      expect(described_class.new(%(Permissions Violation for Subscription to "orders.>")).subscription_subject)
+        .to eq("orders.>")
+    end
+
+    it "returns the subject of a refused queue subscription that names the sid" do
+      error = described_class.new(%(Permissions Violation for Subscription to "orders.>" using queue "q" (sid "7")))
+
+      expect(error.subscription_subject).to eq("orders.>")
+    end
+
+    it "returns nil for a refused publish" do
+      expect(described_class.new(%(Permissions Violation for Publish to "orders.new")).subscription_subject).to be_nil
+    end
+  end
+end

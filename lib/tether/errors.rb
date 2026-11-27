@@ -248,9 +248,16 @@ module Tether
   # Raised when publishing to or subscribing to a subject the user cannot access.
   # The server does not close the connection for any of its seven variants.
   class PermissionsViolationError < ServerError
+    SUBSCRIPTION = /subscription to "([^"]+)"/i
+
     # @return [Boolean] false for all seven variants the server can send
     def self.fatal?
       false
+    end
+
+    # @return [String, nil] the subject of the refused subscription; nil when a publish was refused
+    def subscription_subject
+      message[SUBSCRIPTION, 1]
     end
   end
 end

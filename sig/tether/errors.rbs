@@ -135,6 +135,9 @@ module Tether
   end
 
   class PermissionsViolationError < ServerError
+    SUBSCRIPTION: Regexp
+
     def self.fatal?: () -> bool
+    def subscription_subject: () -> String?
   end
 end
